@@ -117,6 +117,8 @@ class DriftPlaylistRepository implements PlaylistRepository {
     required List<Color> colors,
     required Color accentColor,
     required String backgroundImagePath,
+    required VibeCustomEffect effect,
+    required String backgroundVideoPath,
   }) {
     return (_db.update(_db.playlists)..where((p) => p.id.equals(playlistId))).write(
       PlaylistsCompanion(
@@ -124,6 +126,8 @@ class DriftPlaylistRepository implements PlaylistRepository {
         bgColors: Value(colors.map(colorToHex).toList()),
         customAccentColor: Value(colorToHex(accentColor)),
         customBackgroundImagePath: Value(backgroundImagePath),
+        customEffect: Value(effect),
+        customBackgroundVideoPath: Value(backgroundVideoPath),
       ),
     );
   }

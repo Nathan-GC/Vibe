@@ -18,6 +18,7 @@ import '../widgets/album_art_reactive.dart';
 import '../widgets/fluid_background.dart';
 import '../widgets/like_button.dart';
 import '../widgets/progress_slider.dart';
+import '../widgets/vibe_video_background.dart';
 import 'queue_screen.dart';
 
 /// Tab 2 : swipe horizontal Page 1 (Player) / Page 2 (Queue, voir queue_screen.dart).
@@ -62,26 +63,78 @@ class _MasterPlayerScreenState extends ConsumerState<MasterPlayerScreen> with Si
     final VibeVisual vibe = playlist.value?.resolvedVibe ??
         const VibeVisual(gradientColors: [Color(0xFFF5F5F5), Color(0xFFE0E0E0)], accentColor: Colors.black87);
 
+    final Track? track = player.currentTrack;
+    final String? playlistCoverImagePath = playlist.value?.coverImagePath;
+    // Section 3.2 : même repli pochette->playlist que MasterPlayerScreen
+    // utilise déjà pour AlbumArtReactive, réutilisé ici pour l'extraction de
+    // palette (FluidBackground) — un morceau sans pochette dédiée profite
+    // quand même des couleurs de la playlist plutôt que du dégradé statique.
+    final String? effectiveCoverArtPath = (track?.coverArtPath.isNotEmpty ?? false)
+        ? track!.coverArtPath
+        : ((playlistCoverImagePath?.isNotEmpty ?? false) ? playlistCoverImagePath : null);
+
     return Scaffold(
-      body: PageView(
-        children: [
-          // Transitions fluides de Vibe (800ms, easeInOutCubic) : tout ce qui
-          // dépend de la Vibe sur cette page reçoit la valeur interpolée,
-          // jamais `vibe` brute — voir AnimatedVibeTheme.
-          AnimatedVibeTheme(
-            vibe: vibe,
-            builder: (context, animatedVibe, child) {
-              return _PlayerPage(
+      // Transitions fluides de Vibe (800ms, easeInOutCubic) : tout ce qui
+      // dépend de la Vibe reçoit la valeur interpolée, jamais `vibe` brute —
+      // voir AnimatedVibeTheme.
+      body: AnimatedVibeTheme(
+        vibe: vibe,
+        builder: (context, animatedVibe, child) {
+          // Section 4.1 : le fond (FluidBackground ou vidéo) englobe désormais
+          // tout le PageView (Player + Queue) plutôt que la seule page 1 — la
+          // Vibe reste donc visible et animée pendant le swipe vers la Queue
+          // au lieu de disparaître derrière un fond vide.
+          final Widget pageView = PageView(
+            children: [
+              _PlayerPage(
                 tempoController: _tempoController,
                 vibe: animatedVibe,
                 player: player,
-                playlistCoverImagePath: playlist.value?.coverImagePath,
-              );
-            },
-          ),
-          const QueueScreen(),
-        ],
+                playlistCoverImagePath: playlistCoverImagePath,
+              ),
+              const QueueScreen(),
+            ],
+          );
+
+          // Section 4.3 : une vidéo de fond personnalisée remplace
+          // entièrement le shader/dégradé/effet — jamais superposée.
+          final String? videoPath = animatedVibe.customBackgroundVideoPath;
+          if (videoPath != null) {
+            return VibeVideoBackground(videoPath: videoPath, child: pageView);
+          }
+
+          return FluidBackground(
+            tempoController: _tempoController,
+            vibe: animatedVibe,
+            coverArtPath: effectiveCoverArtPath,
+            child: _VibeBackgroundImageLayer(backgroundImagePath: animatedVibe.backgroundImagePath, child: pageView),
+          );
+        },
       ),
+    );
+  }
+}
+
+/// Image de fond personnalisée (Vibe Creator, `VibePreset.custom`) posée
+/// sous [child] en semi-transparence — extrait de l'ancien corps de
+/// `_PlayerPage` pour s'appliquer à tout le PageView (voir Section 4.1)
+/// plutôt qu'à sa seule page 1.
+class _VibeBackgroundImageLayer extends StatelessWidget {
+  const _VibeBackgroundImageLayer({required this.backgroundImagePath, required this.child});
+
+  final String? backgroundImagePath;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final String? path = backgroundImagePath;
+    if (path == null) return child;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Opacity(opacity: 0.35, child: Image.file(File(path), fit: BoxFit.cover)),
+        child,
+      ],
     );
   }
 }
@@ -301,22 +354,10 @@ class _PlayerPageState extends State<_PlayerPage> with SingleTickerProviderState
       ),
     );
 
-    final String? backgroundImagePath = vibe.backgroundImagePath;
-
-    return FluidBackground(
-      tempoController: widget.tempoController,
-      vibe: vibe,
-      coverArtPath: track?.coverArtPath,
-      child: backgroundImagePath == null
-          ? content
-          : Stack(
-              fit: StackFit.expand,
-              children: [
-                Opacity(opacity: 0.35, child: Image.file(File(backgroundImagePath), fit: BoxFit.cover)),
-                content,
-              ],
-            ),
-    );
+    // FluidBackground/l'image de fond personnalisée sont posés au niveau de
+    // MasterPlayerScreen (Section 4.1), pas ici : cette page ne fait plus que
+    // son propre contenu, affiché par-dessus le fond partagé avec la Queue.
+    return content;
   }
 }
 

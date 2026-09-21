@@ -84,6 +84,9 @@ class _CustomVibeEditor extends ConsumerStatefulWidget {
 }
 
 class _CustomVibeEditorState extends ConsumerState<_CustomVibeEditor> {
+  // Section 4.2 "Élargir le nuancier" — 10 teintes historiques + 10
+  // supplémentaires ; le code hexadécimal ci-dessous couvre de toute façon
+  // n'importe quelle couleur au-delà de ce nuancier.
   static const List<Color> _swatchChoices = [
     Color(0xFFFF3D68),
     Color(0xFFFF8A00),
@@ -95,13 +98,29 @@ class _CustomVibeEditorState extends ConsumerState<_CustomVibeEditor> {
     Color(0xFF9B51E0),
     Color(0xFFFF00E5),
     Color(0xFFFFFFFF),
+    Color(0xFF000000),
+    Color(0xFF00BFA5),
+    Color(0xFFFF6E40),
+    Color(0xFFAEEA00),
+    Color(0xFFFF4081),
+    Color(0xFF40C4FF),
+    Color(0xFFFFD700),
+    Color(0xFF607D8B),
+    Color(0xFF795548),
+    Color(0xFFE0E0E0),
   ];
 
   late List<Color> _selectedColors;
   late Color _selectedAccentColor;
+  late VibeCustomEffect _selectedEffect;
   String? _pendingImagePath;
   bool _clearImage = false;
+  String? _pendingVideoPath;
+  bool _clearVideo = false;
   bool _isSaving = false;
+
+  final TextEditingController _gradientHexController = TextEditingController();
+  final TextEditingController _accentHexController = TextEditingController();
 
   @override
   void initState() {
@@ -111,6 +130,45 @@ class _CustomVibeEditorState extends ConsumerState<_CustomVibeEditor> {
         ? List.of(current.gradientColors)
         : [_swatchChoices[0], _swatchChoices[5]];
     _selectedAccentColor = current.accentColor;
+    _selectedEffect = current.effect;
+  }
+
+  @override
+  void dispose() {
+    _gradientHexController.dispose();
+    _accentHexController.dispose();
+    super.dispose();
+  }
+
+  // Section 4.2 : saisie d'un code hexadécimal ("#RRGGBB" ou "#AARRGGBB",
+  // "#" optionnel) — sans alpha, opaque par défaut (AA = FF), cohérent avec
+  // les nuances du sélecteur ci-dessus qui sont elles aussi toutes opaques.
+  static Color? _parseHex(String input) {
+    String hex = input.trim().replaceFirst('#', '');
+    if (hex.length == 6) hex = 'FF$hex';
+    if (hex.length != 8) return null;
+    final int? value = int.tryParse(hex, radix: 16);
+    return value == null ? null : Color(value);
+  }
+
+  void _applyGradientHex() {
+    final Color? color = _parseHex(_gradientHexController.text);
+    if (color == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Code hexadécimal invalide')));
+      return;
+    }
+    _toggleColor(color);
+    _gradientHexController.clear();
+  }
+
+  void _applyAccentHex() {
+    final Color? color = _parseHex(_accentHexController.text);
+    if (color == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Code hexadécimal invalide')));
+      return;
+    }
+    setState(() => _selectedAccentColor = color);
+    _accentHexController.clear();
   }
 
   void _toggleColor(Color color) {
@@ -134,10 +192,31 @@ class _CustomVibeEditorState extends ConsumerState<_CustomVibeEditor> {
     });
   }
 
+  /// Section 4.3 : vidéo verticale courte jouée en boucle à la place des
+  /// shaders — voir MasterPlayerScreen/VibeVideoBackground.
+  Future<void> _pickVideo() async {
+    final XFile? picked = await ImagePicker().pickVideo(source: ImageSource.gallery);
+    if (picked == null) return;
+    setState(() {
+      _pendingVideoPath = picked.path;
+      _clearVideo = false;
+    });
+  }
+
   Future<void> _save() async {
     VibeHapticService.triggerForPreset(VibePreset.custom, VibeInteraction.vibeSelect);
     setState(() => _isSaving = true);
     try {
+      String backgroundVideoPath = widget.playlist.customBackgroundVideoPath;
+      if (_clearVideo) {
+        backgroundVideoPath = '';
+      } else if (_pendingVideoPath != null) {
+        final File imported = await ref
+            .read(storageManagerServiceProvider)
+            .importVibeBackgroundVideo(File(_pendingVideoPath!), widget.playlistId);
+        backgroundVideoPath = imported.path;
+      }
+
       String backgroundImagePath = widget.playlist.customBackgroundImagePath;
       if (_clearImage) {
         backgroundImagePath = '';
@@ -153,6 +232,8 @@ class _CustomVibeEditorState extends ConsumerState<_CustomVibeEditor> {
             colors: _selectedColors,
             accentColor: _selectedAccentColor,
             backgroundImagePath: backgroundImagePath,
+            effect: _selectedEffect,
+            backgroundVideoPath: backgroundVideoPath,
           );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vibe personnalisée appliquée')));
@@ -166,6 +247,8 @@ class _CustomVibeEditorState extends ConsumerState<_CustomVibeEditor> {
   Widget build(BuildContext context) {
     final bool hasExistingImage =
         !_clearImage && _pendingImagePath == null && widget.playlist.customBackgroundImagePath.isNotEmpty;
+    final bool hasExistingVideo =
+        !_clearVideo && _pendingVideoPath == null && widget.playlist.customBackgroundVideoPath.isNotEmpty;
     final bool isCustomActive = widget.playlist.vibeStyle == VibePreset.custom;
 
     return Card(
@@ -230,6 +313,8 @@ class _CustomVibeEditorState extends ConsumerState<_CustomVibeEditor> {
                 );
               }).toList(),
             ),
+            const SizedBox(height: 8),
+            _HexColorInput(controller: _gradientHexController, onSubmit: _applyGradientHex),
             const SizedBox(height: 16),
             Text('Couleur d\'accentuation (boutons, contrôles)', style: Theme.of(context).textTheme.bodySmall),
             const SizedBox(height: 8),
@@ -258,6 +343,21 @@ class _CustomVibeEditorState extends ConsumerState<_CustomVibeEditor> {
                 );
               }).toList(),
             ),
+            const SizedBox(height: 8),
+            _HexColorInput(controller: _accentHexController, onSubmit: _applyAccentHex),
+            const SizedBox(height: 16),
+            Text('Effet de fond', style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 8),
+            SegmentedButton<VibeCustomEffect>(
+              segments: const [
+                ButtonSegment(value: VibeCustomEffect.fluid, label: Text('Fluide')),
+                ButtonSegment(value: VibeCustomEffect.animatedGradient, label: Text('Dégradé animé')),
+                ButtonSegment(value: VibeCustomEffect.radiation, label: Text('Radiation')),
+              ],
+              selected: {_selectedEffect},
+              showSelectedIcon: false,
+              onSelectionChanged: (selection) => setState(() => _selectedEffect = selection.first),
+            ),
             const SizedBox(height: 16),
             Row(
               children: [
@@ -279,6 +379,34 @@ class _CustomVibeEditorState extends ConsumerState<_CustomVibeEditor> {
                 ],
               ],
             ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _pickVideo,
+                  icon: const Icon(Icons.videocam_outlined),
+                  label: const Text('Ajouter une vidéo'),
+                ),
+                if (hasExistingVideo || _pendingVideoPath != null) ...[
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: 'Retirer la vidéo',
+                    icon: const Icon(Icons.close),
+                    onPressed: () => setState(() {
+                      _pendingVideoPath = null;
+                      _clearVideo = true;
+                    }),
+                  ),
+                ],
+              ],
+            ),
+            if (hasExistingVideo || _pendingVideoPath != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Une vidéo de fond remplace l\'effet/l\'image ci-dessus dans le Lecteur tant qu\'elle reste définie.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
@@ -296,6 +424,38 @@ class _CustomVibeEditorState extends ConsumerState<_CustomVibeEditor> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Champ de saisie hexadécimale (Section 4.2) partagé par le dégradé et
+/// l'accent — "#" optionnel, complète automatiquement sans canal alpha
+/// explicite ("#RRGGBB") en couleur opaque (voir `_parseHex`).
+class _HexColorInput extends StatelessWidget {
+  const _HexColorInput({required this.controller, required this.onSubmit});
+
+  final TextEditingController controller;
+  final VoidCallback onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: controller,
+            decoration: const InputDecoration(
+              labelText: 'Code hexadécimal',
+              hintText: '#FF5733',
+              isDense: true,
+              prefixIcon: Icon(Icons.tag, size: 18),
+            ),
+            onSubmitted: (_) => onSubmit(),
+          ),
+        ),
+        const SizedBox(width: 8),
+        OutlinedButton(onPressed: onSubmit, child: const Text('Ajouter')),
+      ],
     );
   }
 }

@@ -77,6 +77,9 @@ dependencies:
   # Fond Fluid audio-réactif du Player : palette dominante extraite de la pochette
   palette_generator: ^0.3.3+7
 
+  # Vibe Engine : vidéo de fond personnalisée jouée en boucle (Section 4.3)
+  video_player: ^2.9.2
+
   cupertino_icons: ^1.0.8
 
 dev_dependencies:

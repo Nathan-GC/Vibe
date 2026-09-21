@@ -34,6 +34,19 @@ class VibePresetConverter extends TypeConverter<VibePreset, String> {
   String toSql(VibePreset value) => value.name;
 }
 
+/// Mappe `playlists.custom_effect` — voir [VibeCustomEffect].
+class VibeCustomEffectConverter extends TypeConverter<VibeCustomEffect, String> {
+  const VibeCustomEffectConverter();
+
+  @override
+  VibeCustomEffect fromSql(String fromDb) {
+    return VibeCustomEffect.values.firstWhere((effect) => effect.name == fromDb, orElse: () => VibeCustomEffect.fluid);
+  }
+
+  @override
+  String toSql(VibeCustomEffect value) => value.name;
+}
+
 /// Statut du circuit-breaker d'enrichissement automatique (voir
 /// `Tracks.enrichmentStatus`, `TrackAutoEnricher`, `TrackRepository.
 /// shouldAttemptEnrichment`/`recordEnrichmentOutcome`) :
@@ -158,6 +171,16 @@ class Playlists extends Table {
   // playlist (voir PlaylistCoverImage), ou un repli générique Vibe si vide.
   TextColumn get coverImagePath => text().withDefault(const Constant(''))();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  // Effet de fond du Vibe Creator (Section 4.2) pour `vibeStyle == custom`
+  // uniquement — voir [VibeCustomEffect]. Sans effet pour les autres presets.
+  TextColumn get customEffect =>
+      text().map(const VibeCustomEffectConverter()).withDefault(const Constant('fluid'))();
+  // Vidéo de fond personnalisée (Section 4.3, `vibeStyle == custom`) —
+  // chemin local sous Music/AppFolder/vibe_backgrounds/, vide si non définie.
+  // Remplace entièrement le rendu shader/dégradé/image du Master Player
+  // quand renseignée (voir MasterPlayerScreen) : mutuellement exclusive avec
+  // `customEffect`/`customBackgroundImagePath`, jamais superposée.
+  TextColumn get customBackgroundVideoPath => text().withDefault(const Constant(''))();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -183,7 +206,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 9;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -221,6 +244,10 @@ class AppDatabase extends _$AppDatabase {
             await (update(tracks)..where((t) => t.requiresUserReview.equals(true))).write(
               const TracksCompanion(enrichmentStatus: Value(EnrichmentStatus.requiresReview)),
             );
+          }
+          if (from < 9) {
+            await m.addColumn(playlists, playlists.customEffect);
+            await m.addColumn(playlists, playlists.customBackgroundVideoPath);
           }
         },
       );

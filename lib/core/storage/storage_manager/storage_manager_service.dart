@@ -94,6 +94,25 @@ class StorageManagerService {
     return sourceFile.copy(targetPath);
   }
 
+  /// Copie une vidéo de fond choisie via `image_picker` (`pickVideo`, Vibe
+  /// Creator — Section 4.3) dans le même dossier que [importVibeBackgroundImage]
+  /// (extension différente, jamais de collision), en écrasant toute vidéo
+  /// précédente pour cette playlist.
+  Future<File> importVibeBackgroundVideo(File sourceFile, String playlistId) async {
+    final int sizeBytes = await sourceFile.length();
+    await checkAvailableStorage(sizeBytes);
+
+    final Directory appFolder = await MusicFolderResolver.resolve();
+    final Directory vibeFolder = Directory(p.join(appFolder.path, 'vibe_backgrounds'));
+    if (!await vibeFolder.exists()) {
+      await vibeFolder.create(recursive: true);
+    }
+
+    final String extension = p.extension(sourceFile.path);
+    final String targetPath = p.join(vibeFolder.path, '$playlistId$extension');
+    return sourceFile.copy(targetPath);
+  }
+
   /// Copie une pochette choisie manuellement (édition via appui long sur un
   /// morceau) dans `Music/AppFolder/track_covers/<trackId>.<ext>`, en
   /// écrasant toute pochette précédemment importée pour ce morceau.

@@ -25,6 +25,8 @@ extension PlaylistVibeResolver on Playlist {
           (customColors.isEmpty ? VibePreset.custom.accentColor : customColors.last),
       backgroundImagePath: customBackgroundImagePath.isEmpty ? null : customBackgroundImagePath,
       preset: VibePreset.custom,
+      effect: customEffect,
+      customBackgroundVideoPath: customBackgroundVideoPath.isEmpty ? null : customBackgroundVideoPath,
     );
   }
 }

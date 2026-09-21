@@ -49,13 +49,17 @@ abstract class PlaylistRepository {
 
   /// Bascule la playlist sur `VibePreset.custom` et enregistre les couleurs
   /// de dégradé (2 minimum), la couleur d'accentuation explicite des boutons/
-  /// éléments interactifs, et/ou l'image de fond choisies dans le Vibe
-  /// Creator. `backgroundImagePath` vide retire l'image (dégradé seul).
+  /// éléments interactifs, l'effet de fond ([VibeCustomEffect]) et/ou l'image
+  /// et la vidéo de fond choisies dans le Vibe Creator. `backgroundImagePath`/
+  /// `backgroundVideoPath` vides retirent l'image/la vidéo (voir
+  /// MasterPlayerScreen pour l'exclusivité mutuelle vidéo vs effet/image).
   Future<void> updateCustomVibe(
     String playlistId, {
     required List<Color> colors,
     required Color accentColor,
     required String backgroundImagePath,
+    required VibeCustomEffect effect,
+    required String backgroundVideoPath,
   });
 
   Future<void> incrementVersion(String playlistId);

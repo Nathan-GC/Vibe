@@ -106,11 +106,29 @@ extension VibeParticleStyle on VibePreset {
       };
 }
 
+/// Effet visuel du fond animé pour `VibePreset.custom` (Vibe Creator, Section
+/// 4.2) — voir `FluidBackground`/`_FluidPainter` pour le rendu de chacun :
+///  - [fluid] : rendu historique (halos flous qui dérivent), aussi utilisé
+///    tel quel par tous les presets figés (`minimal`, `neon`, ...) qui
+///    n'exposent pas ce choix.
+///  - [animatedGradient] : dégradé plein écran dont l'angle tourne en continu,
+///    sans les halos flous du mode Fluide.
+///  - [radiation] : rayons pulsés depuis le centre au rythme du BPM.
+enum VibeCustomEffect { fluid, animatedGradient, radiation }
+
 /// Rendu effectif d'une Vibe : pour les presets fixes, dérivé de [VibePresetStyle] ;
 /// pour `VibePreset.custom`, dérivé des champs propres à la playlist
-/// (`bgColors`, `customBackgroundImagePath`) plutôt que d'une palette statique.
+/// (`bgColors`, `customBackgroundImagePath`, `customEffect`) plutôt que d'une
+/// palette statique.
 class VibeVisual {
-  const VibeVisual({required this.gradientColors, required this.accentColor, this.backgroundImagePath, this.preset});
+  const VibeVisual({
+    required this.gradientColors,
+    required this.accentColor,
+    this.backgroundImagePath,
+    this.preset,
+    this.effect = VibeCustomEffect.fluid,
+    this.customBackgroundVideoPath,
+  });
 
   final List<Color> gradientColors;
   final Color accentColor;
@@ -120,4 +138,11 @@ class VibeVisual {
   // (VibeHapticService), qui ont besoin du preset discret, pas seulement des
   // couleurs dérivées.
   final VibePreset? preset;
+  // Choix propre à `VibePreset.custom` (Section 4.2) — [VibeCustomEffect.fluid]
+  // pour tous les autres presets, qui n'exposent pas ce réglage.
+  final VibeCustomEffect effect;
+  // Vidéo de fond personnalisée (Section 4.3, `VibePreset.custom` uniquement)
+  // — quand non nulle, remplace entièrement le rendu shader/dégradé/[effect]
+  // du Master Player (voir MasterPlayerScreen), jamais superposée à celui-ci.
+  final String? customBackgroundVideoPath;
 }

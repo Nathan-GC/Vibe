@@ -226,6 +226,9 @@ class _FluidBackgroundState extends State<FluidBackground> with SingleTickerProv
             shaderAccentColor: widget.vibe.accentColor,
             shaderStyle: particleStyle ?? 0,
             paintGradientBlobs: !isNeon,
+            // Effet propre à VibePreset.custom (Section 4.2) — VibeCustomEffect.fluid
+            // (comportement historique) pour tous les autres presets.
+            effect: widget.vibe.effect,
             backdropImage: _backdropImage,
             dummySamplerImage: _dummySamplerImage,
           ),
@@ -278,6 +281,7 @@ class _FluidPainter extends CustomPainter {
     required this.shaderAccentColor,
     required this.shaderStyle,
     required this.paintGradientBlobs,
+    required this.effect,
     required this.backdropImage,
     required this.dummySamplerImage,
   });
@@ -294,6 +298,8 @@ class _FluidPainter extends CustomPainter {
   // en-dessous) : ce painter ne doit alors tracer QUE le shader
   // (grésillement/buée/pluie), jamais le fond opaque + halos habituels.
   final bool paintGradientBlobs;
+  // Choix de rendu quand [paintGradientBlobs] est vrai — voir [VibeCustomEffect].
+  final VibeCustomEffect effect;
   // Vibe Neon (styleIndex 0) uniquement : texture échantillonnée par le
   // shader lui-même pour la réfraction des gouttes et la détection des
   // zones néon (uBackdrop) — voir vibe_particles.frag. `dummySamplerImage`
@@ -304,23 +310,13 @@ class _FluidPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (paintGradientBlobs) {
-      canvas.drawRect(Offset.zero & size, Paint()..color = colors.first);
-
-      for (int i = 0; i < colors.length; i++) {
-        final double angle = drift * 2 * math.pi + i * (2 * math.pi / colors.length);
-        final double radiusScale = 0.5 + beatPhase * 0.15 + (i.isEven ? 0.05 : -0.05);
-        final Offset center = Offset(
-          size.width * (0.5 + 0.35 * math.cos(angle)),
-          size.height * (0.4 + 0.3 * math.sin(angle * 1.3)),
-        );
-
-        canvas.drawCircle(
-          center,
-          size.longestSide * radiusScale,
-          Paint()
-            ..color = colors[i].withValues(alpha: 0.55)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 80),
-        );
+      switch (effect) {
+        case VibeCustomEffect.fluid:
+          _paintFluidBlobs(canvas, size);
+        case VibeCustomEffect.animatedGradient:
+          _paintAnimatedGradient(canvas, size);
+        case VibeCustomEffect.radiation:
+          _paintRadiation(canvas, size);
       }
     }
 
@@ -350,6 +346,83 @@ class _FluidPainter extends CustomPainter {
     }
   }
 
+  // Rendu historique (Vibe Engine v2+, inchangé) : aplat de la première
+  // couleur puis halos flous qui dérivent en orbite, pulsant au beat.
+  void _paintFluidBlobs(Canvas canvas, Size size) {
+    canvas.drawRect(Offset.zero & size, Paint()..color = colors.first);
+
+    for (int i = 0; i < colors.length; i++) {
+      final double angle = drift * 2 * math.pi + i * (2 * math.pi / colors.length);
+      final double radiusScale = 0.5 + beatPhase * 0.15 + (i.isEven ? 0.05 : -0.05);
+      final Offset center = Offset(
+        size.width * (0.5 + 0.35 * math.cos(angle)),
+        size.height * (0.4 + 0.3 * math.sin(angle * 1.3)),
+      );
+
+      canvas.drawCircle(
+        center,
+        size.longestSide * radiusScale,
+        Paint()
+          ..color = colors[i].withValues(alpha: 0.55)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 80),
+      );
+    }
+  }
+
+  // Section 4.2 "Dégradé animé" : dégradé linéaire plein écran dont l'angle
+  // tourne en continu (pas de halos flous, contrairement à [_paintFluidBlobs]).
+  void _paintAnimatedGradient(Canvas canvas, Size size) {
+    final List<Color> gradientColors = colors.length >= 2 ? colors : [...colors, ...colors];
+    final double angle = drift * 2 * math.pi;
+    final Offset center = size.center(Offset.zero);
+    final double radius = size.longestSide * 0.75;
+    final Offset from = center + Offset(math.cos(angle), math.sin(angle)) * radius;
+    final Offset to = center - Offset(math.cos(angle), math.sin(angle)) * radius;
+
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()
+        ..shader = ui.Gradient.linear(from, to, gradientColors)
+        // Légère respiration d'opacité au beat plutôt qu'un dégradé figé.
+        ..color = Colors.white.withValues(alpha: (0.85 + beatPhase * 0.15).clamp(0.0, 1.0)),
+    );
+  }
+
+  // Section 4.2 "Radiation" : rayons flous qui partent du centre vers les
+  // bords, tournant lentement et s'allongeant/rétrécissant au rythme du beat.
+  void _paintRadiation(Canvas canvas, Size size) {
+    final Offset center = size.center(Offset.zero);
+    canvas.drawRect(Offset.zero & size, Paint()..color = colors.last);
+
+    const int rayCount = 12;
+    final double maxRadius = size.longestSide * 0.9;
+    final double pulseRadius = maxRadius * (0.55 + beatPhase * 0.45);
+    const double rayHalfWidth = math.pi / rayCount * 0.5;
+
+    for (int i = 0; i < rayCount; i++) {
+      final double baseAngle = (i / rayCount) * 2 * math.pi + drift * 2 * math.pi;
+      final Color rayColor = colors[i % colors.length];
+      final Path ray = Path()
+        ..moveTo(center.dx, center.dy)
+        ..lineTo(
+          center.dx + pulseRadius * math.cos(baseAngle - rayHalfWidth),
+          center.dy + pulseRadius * math.sin(baseAngle - rayHalfWidth),
+        )
+        ..lineTo(
+          center.dx + pulseRadius * math.cos(baseAngle + rayHalfWidth),
+          center.dy + pulseRadius * math.sin(baseAngle + rayHalfWidth),
+        )
+        ..close();
+
+      canvas.drawPath(
+        ray,
+        Paint()
+          ..color = rayColor.withValues(alpha: 0.5)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 40),
+      );
+    }
+  }
+
   @override
   bool shouldRepaint(covariant _FluidPainter oldDelegate) {
     return oldDelegate.drift != drift ||
@@ -360,6 +433,7 @@ class _FluidPainter extends CustomPainter {
         oldDelegate.shaderStyle != shaderStyle ||
         oldDelegate.shaderAccentColor != shaderAccentColor ||
         oldDelegate.paintGradientBlobs != paintGradientBlobs ||
+        oldDelegate.effect != effect ||
         oldDelegate.backdropImage != backdropImage ||
         oldDelegate.dummySamplerImage != dummySamplerImage;
   }
