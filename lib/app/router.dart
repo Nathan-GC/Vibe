@@ -91,6 +91,15 @@ final GoRouter appRouter = GoRouter(
 /// Découverte/Espace, Retour bascule vers l'onglet Lecteur plutôt que de
 /// quitter l'app (2.B.2) ; depuis Lecteur, Retour réduit d'abord le mode
 /// immersif du Master Player avant d'autoriser la sortie (2.B.3).
+///
+/// `canPop` reste TOUJOURS `false` ici, y compris à la racine de l'onglet
+/// Lecteur où la sortie de l'app est censée être autorisée : `canPop: true`
+/// délègue au pop par défaut de Flutter, qui — vérifié empiriquement sur
+/// émulateur (Android "predictive back") — ne fait alors STRICTEMENT RIEN
+/// puisqu'il n'y a plus rien à dépiler sur ce Navigator racine (l'app reste
+/// bloquée au premier plan, un bouton Retour qui ne répond plus). Appeler
+/// explicitement [SystemNavigator.pop] dans ce cas précis est la seule
+/// façon fiable de vraiment quitter l'app.
 class _TabShell extends ConsumerWidget {
   const _TabShell({required this.navigationShell});
 
@@ -104,15 +113,19 @@ class _TabShell extends ConsumerWidget {
     final bool onPlayerTab = navigationShell.currentIndex == _playerTabIndex;
 
     return PopScope(
-      canPop: onPlayerTab && !isImmersive,
+      canPop: false,
       onPopInvokedWithResult: (bool didPop, Object? result) {
         if (didPop) return;
         if (!onPlayerTab) {
           navigationShell.goBranch(_playerTabIndex);
           return;
         }
-        ref.read(playerImmersiveModeProvider.notifier).set(false);
-        SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+        if (isImmersive) {
+          ref.read(playerImmersiveModeProvider.notifier).set(false);
+          SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+          return;
+        }
+        SystemNavigator.pop();
       },
       child: Scaffold(
         body: navigationShell,
