@@ -62,6 +62,16 @@ class _VibeVisualTween extends Tween<VibeVisual> {
       // valeur jusqu'à la fin.
       backgroundImagePath: t < 0.5 ? a.backgroundImagePath : b.backgroundImagePath,
       preset: t < 0.5 ? a.preset : b.preset,
+      effect: t < 0.5 ? a.effect : b.effect,
+      // `customBackgroundVideoPath` OUBLIÉ ici auparavant : retombait donc à
+      // `null` (défaut du constructeur) sur CHAQUE frame interpolée, tant que
+      // 0 < t < 1 — MasterPlayerScreen bascule sur cette seule valeur entre
+      // `VibeVideoBackground` et `FluidBackground` (deux sous-arbres de
+      // widgets structurellement différents), donc un changement de piste
+      // vers/depuis une Vibe avec vidéo de fond faisait flapper les deux
+      // pendant tout le fondu (800ms) — plantage réel reproduit en rafale de
+      // "suivant" rapprochés : "'renderObject.child == child': is not true."
+      customBackgroundVideoPath: t < 0.5 ? a.customBackgroundVideoPath : b.customBackgroundVideoPath,
     );
   }
 }
