@@ -71,7 +71,12 @@ class _MasterPlayerScreenState extends ConsumerState<MasterPlayerScreen> with Si
           AnimatedVibeTheme(
             vibe: vibe,
             builder: (context, animatedVibe, child) {
-              return _PlayerPage(tempoController: _tempoController, vibe: animatedVibe, player: player);
+              return _PlayerPage(
+                tempoController: _tempoController,
+                vibe: animatedVibe,
+                player: player,
+                playlistCoverImagePath: playlist.value?.coverImagePath,
+              );
             },
           ),
           const QueueScreen(),
@@ -82,11 +87,15 @@ class _MasterPlayerScreenState extends ConsumerState<MasterPlayerScreen> with Si
 }
 
 class _PlayerPage extends StatefulWidget {
-  const _PlayerPage({required this.tempoController, required this.vibe, required this.player});
+  const _PlayerPage({required this.tempoController, required this.vibe, required this.player, this.playlistCoverImagePath});
 
   final TempoSyncController tempoController;
   final VibeVisual vibe;
   final PlayerSnapshot player;
+  // Section 3.2 : pochette de repli quand le morceau en cours n'a pas de
+  // pochette dédiée (`coverArtPath` vide) — celle de la playlist en cours de
+  // lecture plutôt que l'icône générique d'AlbumArtReactive.
+  final String? playlistCoverImagePath;
 
   @override
   State<_PlayerPage> createState() => _PlayerPageState();
@@ -159,6 +168,13 @@ class _PlayerPageState extends State<_PlayerPage> with SingleTickerProviderState
     final Track? track = widget.player.currentTrack;
     final bool isPlaying = widget.player.status == PlaybackStatus.playing;
     final VibeVisual vibe = widget.vibe;
+    // Section 3.2 : repli sur la pochette de la playlist en cours quand le
+    // morceau n'en a pas de dédiée — les deux champs partagent la même
+    // convention "vide = absente" (voir Tracks.coverArtPath, Playlists.
+    // coverImagePath), jamais `null` directement en base.
+    final String? albumArtPath = (track?.coverArtPath.isNotEmpty ?? false)
+        ? track!.coverArtPath
+        : ((widget.playlistCoverImagePath?.isNotEmpty ?? false) ? widget.playlistCoverImagePath : null);
 
     final Widget albumArt = AnimatedBuilder(
       animation: _floatAnimation,
@@ -172,7 +188,7 @@ class _PlayerPageState extends State<_PlayerPage> with SingleTickerProviderState
         curve: Curves.easeInOut,
         child: GestureDetector(
           onLongPress: _enterImmersive,
-          child: AlbumArtReactive(imagePath: track?.coverArtPath, isPlaying: isPlaying),
+          child: AlbumArtReactive(imagePath: albumArtPath, isPlaying: isPlaying),
         ),
       ),
     );

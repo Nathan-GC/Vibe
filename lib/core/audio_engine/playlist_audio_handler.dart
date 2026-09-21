@@ -1,6 +1,7 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../features/playlists/data/playlist_providers.dart';
 import '../storage/database/app_database.dart';
 import 'player_controller.dart';
 
@@ -29,7 +30,7 @@ class PlaylistAudioHandler extends BaseAudioHandler with SeekHandler {
 
   void _syncState(PlayerSnapshot snapshot) {
     final track = snapshot.currentTrack;
-    mediaItem.add(track == null ? null : _mediaItemFor(track));
+    mediaItem.add(track == null ? null : _mediaItemFor(track, snapshot.currentPlaylistId));
 
     final bool isPlaying = snapshot.status == PlaybackStatus.playing;
     playbackState.add(
@@ -47,14 +48,23 @@ class PlaylistAudioHandler extends BaseAudioHandler with SeekHandler {
     );
   }
 
-  MediaItem _mediaItemFor(Track track) {
+  MediaItem _mediaItemFor(Track track, String? playlistId) {
+    // Section 3.2 : repli sur la pochette de la playlist en cours (notification
+    // média/écran verrouillé, l'équivalent "mini player" hors de l'app) quand
+    // le morceau n'a pas de pochette dédiée — même logique que MasterPlayerScreen.
+    String coverArtPath = track.coverArtPath;
+    if (coverArtPath.isEmpty && playlistId != null) {
+      final String? playlistCover = _container.read(playlistByIdProvider(playlistId)).value?.coverImagePath;
+      if (playlistCover != null && playlistCover.isNotEmpty) coverArtPath = playlistCover;
+    }
+
     return MediaItem(
       id: track.filePath,
       title: track.title,
       artist: track.artists.join(', '),
       album: track.album.isEmpty ? null : track.album,
       duration: track.effectivePlaybackDuration,
-      artUri: _artUri(track.coverArtPath),
+      artUri: _artUri(coverArtPath),
     );
   }
 

@@ -266,6 +266,12 @@ class PlayerController extends _$PlayerController {
       await playTrackAt(_currentIndex);
     } else if (_currentIndex + 1 < tracks.length) {
       await playTrackAt(_currentIndex + 1);
+    } else if (tracks.isNotEmpty) {
+      // Section 3.1 : fin du dernier morceau de la playlist -> relance
+      // automatique au premier plutôt que de s'arrêter (`playlistId` omis,
+      // comme la branche "morceau suivant" ci-dessus : `playTrackAt` retombe
+      // alors sur `currentPlaylistId` déjà en cours via `copyWith`).
+      await playTrackAt(0);
     } else {
       state = state.copyWith(status: PlaybackStatus.idle);
     }

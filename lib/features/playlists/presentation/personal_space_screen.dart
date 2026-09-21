@@ -98,6 +98,7 @@ class PersonalSpaceScreen extends ConsumerWidget {
                   itemBuilder: (context, index) => PlaylistCard(
                     playlist: data[index],
                     onTap: () => context.push('/space/playlist/${data[index].id}/edit'),
+                    onImageTap: () => playPlaylistAndNavigate(context, ref, data[index]),
                   ),
                 ),
               ),
