@@ -77,7 +77,8 @@ void main() {
       final r = sanitizer.sanitizeFilename(
         'Tame Impala, JENNIE - Dracula (JENNIE Remix - Official Lyric Video).mp3',
       );
-      expect(r.artist, 'Tame Impala, JENNIE');
+      expect(r.artist, 'Tame Impala');
+      expect(r.featuringArtists, ['JENNIE']);
       expect(r.title, 'Dracula (JENNIE Remix - Official Lyric Video)');
       expect(r.requiresUserReview, isFalse);
     });
@@ -144,6 +145,66 @@ void main() {
       );
       expect(r.title, isNot('Eurythmics'));
       expect(r.requiresUserReview, isTrue);
+    });
+  });
+
+  group('multi-artist splitting (primary + featuring)', () {
+    test('splits on "&" into primary artist and one featuring', () {
+      final r = sanitizer.sanitizeFilename('Alesso & Ellie Goulding - Playground.mp3');
+      expect(r.artist, 'Alesso');
+      expect(r.featuringArtists, ['Ellie Goulding']);
+    });
+
+    test('splits on a standalone "x" without swallowing an artist starting with "X"', () {
+      final withX = sanitizer.sanitizeFilename('Alesso x Ellie Goulding - Playground.mp3');
+      expect(withX.artist, 'Alesso');
+      expect(withX.featuringArtists, ['Ellie Goulding']);
+
+      final startsWithX = sanitizer.sanitizeFilename('X Ambassadors - Renegades.mp3');
+      expect(startsWithX.artist, 'X Ambassadors');
+      expect(startsWithX.featuringArtists, isEmpty);
+    });
+
+    test('splits on "vs" and "feat."/"ft." within the artist segment', () {
+      final vs = sanitizer.sanitizeFilename('Ali vs Kevin Marques - Blade.mp3');
+      expect(vs.artist, 'Ali');
+      expect(vs.featuringArtists, ['Kevin Marques']);
+
+      final feat = sanitizer.sanitizeFilename('David Guetta feat. Sia - Titanium.mp3');
+      expect(feat.artist, 'David Guetta');
+      expect(feat.featuringArtists, ['Sia']);
+
+      final ft = sanitizer.sanitizeFilename('Alan Walker ft. Sabrina Carpenter - Faded.mp3');
+      expect(ft.artist, 'Alan Walker');
+      expect(ft.featuringArtists, ['Sabrina Carpenter']);
+    });
+
+    test('keeps a single artist without featurings unaffected', () {
+      final r = sanitizer.sanitizeFilename('Daft Punk - One More Time.mp3');
+      expect(r.artist, 'Daft Punk');
+      expect(r.featuringArtists, isEmpty);
+    });
+  });
+
+  group('protected artist names with special punctuation', () {
+    test('keeps "Fred again.." intact instead of losing its trailing dots', () {
+      final r = sanitizer.sanitizeFilename('Fred again.. - Delilah (pull me out of this).mp3');
+      expect(r.artist, 'Fred again..');
+      expect(r.title, 'Delilah (pull me out of this)');
+      expect(r.featuringArtists, isEmpty);
+    });
+
+    test('keeps "AC/DC" intact on disk variants without a false artist/title split', () {
+      final dash = sanitizer.sanitizeFilename('AC-DC - Thunderstruck.mp3');
+      expect(dash.artist, 'AC/DC');
+      expect(dash.title, 'Thunderstruck');
+      expect(dash.requiresUserReview, isFalse);
+    });
+
+    test('does not split "Earth, Wind & Fire" on the comma/ampersand as if it were multiple artists', () {
+      final r = sanitizer.sanitizeFilename('Earth, Wind & Fire - September.mp3');
+      expect(r.artist, 'Earth, Wind & Fire');
+      expect(r.featuringArtists, isEmpty);
     });
   });
 

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/shared/widgets/enrichment_source_dialog.dart';
+import '../../../core/storage/database/track_enricher.dart';
 import '../../../core/storage/scanner/full_device_scan_service.dart';
 import '../data/onboarding_providers.dart';
 
@@ -24,7 +26,17 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 
   Future<void> _runScan() async {
-    await ref.read(onboardingScanControllerProvider.notifier).start();
+    // Choisi une seule fois avant le scan plutôt qu'après (Section 2.1) :
+    // contrairement à l'import manuel, on ne sait pas encore à ce stade si
+    // des morceaux renommés existeront — le premier lancement scanne la
+    // bibliothèque entière, où au moins un fichier ambigu est la norme plutôt
+    // que l'exception. `null` (dialogue fermé sans choix) retombe sur iTunes
+    // plutôt que de renoncer silencieusement à tout enrichissement du premier
+    // lancement.
+    final EnrichmentSource source = mounted
+        ? await showEnrichmentSourceDialog(context) ?? EnrichmentSource.itunes
+        : EnrichmentSource.itunes;
+    await ref.read(onboardingScanControllerProvider.notifier).start(source: source);
     if (mounted) context.go('/player');
   }
 

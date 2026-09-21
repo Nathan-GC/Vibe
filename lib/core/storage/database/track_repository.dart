@@ -92,6 +92,10 @@ class TrackRepository {
               tags: Value(scanned.genre == null ? const [] : [scanned.genre!]),
               lastModifiedEpochMs: Value(scanned.lastModifiedEpochMs),
               fileHash: Value(scanned.fileHash),
+              // Voir [EnrichmentStatus] : un morceau ambigu dès le nom de
+              // fichier ne doit pas gaspiller de tentative d'enrichissement
+              // automatique tant qu'un humain n'a pas confirmé Titre/Artiste.
+              enrichmentStatus: Value(scanned.requiresUserReview ? EnrichmentStatus.requiresReview : EnrichmentStatus.pending),
             ),
           );
 
@@ -181,6 +185,12 @@ class TrackRepository {
           coverArtPath: coverArtUrl == null ? const Value.absent() : Value(coverArtUrl),
           tags: genre == null ? const Value.absent() : Value(genre.isEmpty ? const [] : [genre]),
           requiresUserReview: const Value(false),
+          // Une correction manuelle change les données de départ : le
+          // circuit-breaker d'enrichissement (voir [EnrichmentStatus]) repart
+          // à zéro plutôt que de rester bloqué `failedPermanently`/
+          // `requiresReview` sur un Titre/Artiste qui n'existe plus.
+          enrichmentAttempts: const Value(0),
+          enrichmentStatus: const Value(EnrichmentStatus.pending),
         ),
       );
 
@@ -189,6 +199,45 @@ class TrackRepository {
             TrackArtistsCompanion.insert(trackId: trackId, artistName: normalizedArtist, position: 0),
           );
     });
+  }
+
+  /// Nombre de tentatives d'enrichissement automatique avant abandon
+  /// définitif — voir [EnrichmentStatus.failedPermanently].
+  static const int maxEnrichmentAttempts = 2;
+
+  /// `false` si [trackId] est `failedPermanently` (tentatives épuisées) ou
+  /// `requiresReview` (Titre/Artiste trop ambigus depuis le nom de fichier) —
+  /// évite à [TrackAutoEnricher] de rappeler l'API pour rien. Un morceau
+  /// introuvable ou déjà `success`/`pending` reste éligible.
+  Future<bool> shouldAttemptEnrichment(String trackId) async {
+    final Track? track = await findById(trackId);
+    if (track == null) return false;
+    return track.enrichmentStatus != EnrichmentStatus.failedPermanently &&
+        track.enrichmentStatus != EnrichmentStatus.requiresReview;
+  }
+
+  /// Met à jour le circuit-breaker après une tentative d'enrichissement
+  /// [TrackAutoEnricher] menée à son terme (recherche API réussie, qu'une
+  /// correspondance fiable ait été trouvée ou non) — jamais appelé après une
+  /// simple erreur réseau/timeout, qui ne doit pas consommer de tentative
+  /// (voir [TrackAutoEnricher.enrichTrack]).
+  Future<void> recordEnrichmentOutcome(String trackId, {required bool success}) async {
+    final Track? track = await findById(trackId);
+    if (track == null) return;
+
+    if (success) {
+      await (_db.update(_db.tracks)..where((t) => t.id.equals(trackId))).write(
+        const TracksCompanion(enrichmentStatus: Value(EnrichmentStatus.success)),
+      );
+      return;
+    }
+
+    final int attempts = track.enrichmentAttempts + 1;
+    final EnrichmentStatus status =
+        attempts >= maxEnrichmentAttempts ? EnrichmentStatus.failedPermanently : EnrichmentStatus.pending;
+    await (_db.update(_db.tracks)..where((t) => t.id.equals(trackId))).write(
+      TracksCompanion(enrichmentAttempts: Value(attempts), enrichmentStatus: Value(status)),
+    );
   }
 
   /// Pochette choisie manuellement (appui long sur un morceau) — remplace
@@ -305,6 +354,23 @@ class TrackRepository {
           );
     });
 
+    return true;
+  }
+
+  /// Enrichissement YouTube (voir [YoutubeAutoEnricher]) — contrairement à
+  /// [enrichFromOnlineMetadata], ne comble QUE la pochette : YouTube ne
+  /// fournit ni Album/Genre/Année structurés, ni de garantie que le nom de
+  /// chaîne renvoyé soit le véritable artiste (jamais utilisé pour corriger
+  /// Titre/Artiste automatiquement, contrairement à
+  /// [correctReversedTitleArtist]). Non destructif : ignoré si une pochette
+  /// existe déjà.
+  Future<bool> enrichCoverArtFromYoutube(String trackId, String thumbnailUrl) async {
+    final Track? track = await findById(trackId);
+    if (track == null || track.coverArtPath.isNotEmpty) return false;
+
+    await (_db.update(_db.tracks)..where((t) => t.id.equals(trackId))).write(
+      TracksCompanion(coverArtPath: Value(thumbnailUrl)),
+    );
     return true;
   }
 

@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 import '../../../core/audio_engine/preview_player_controller.dart';
 import '../../../core/networking/metadata_api_client/online_track_result.dart';
 import '../../../core/storage/database/app_database.dart';
+import '../../../core/storage/database/track_enricher.dart';
 import '../../../core/storage/database/track_repository.dart';
 import '../../../core/storage/filename_sanitizer/filename_sanitizer.dart';
 import '../data/library_providers.dart';
@@ -57,6 +58,11 @@ class _MetadataEditorModalState extends ConsumerState<MetadataEditorModal> {
   bool _fetchFailed = false;
   String? _selectedCoverArtUrl;
   bool _saving = false;
+
+  // Sélecteur de source (Section 2.3) — bascule laquelle des deux API
+  // interroge les deux champs Artiste/Titre ci-dessus, sans changer le reste
+  // du flux (affichage des résultats, application sur les champs manuels).
+  EnrichmentSource _searchSource = EnrichmentSource.itunes;
 
   @override
   void initState() {
@@ -124,7 +130,11 @@ class _MetadataEditorModalState extends ConsumerState<MetadataEditorModal> {
     bool failed = false;
     if (artist.isNotEmpty || title.isNotEmpty) {
       try {
-        results = await ref.read(metadataApiClientProvider).searchByArtistAndTitle(artist: artist, title: title, limit: 5);
+        results = switch (_searchSource) {
+          EnrichmentSource.itunes =>
+            await ref.read(metadataApiClientProvider).searchByArtistAndTitle(artist: artist, title: title, limit: 5),
+          EnrichmentSource.youtube => await ref.read(youtubeEnricherServiceProvider).search(artist: artist, title: title),
+        };
       } catch (_) {
         // Pas de réseau, timeout, API indisponible... — la modale reste
         // utilisable en saisie manuelle, mais on distingue ce cas de "aucune
@@ -232,7 +242,28 @@ class _MetadataEditorModalState extends ConsumerState<MetadataEditorModal> {
                 ],
               ),
               const SizedBox(height: 20),
-              Text('Recherche en ligne (iTunes)', style: Theme.of(context).textTheme.labelLarge),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Recherche en ligne', style: Theme.of(context).textTheme.labelLarge),
+                  SegmentedButton<EnrichmentSource>(
+                    segments: const [
+                      ButtonSegment(value: EnrichmentSource.itunes, label: Text('iTunes'), icon: Icon(Icons.apple, size: 16)),
+                      ButtonSegment(
+                        value: EnrichmentSource.youtube,
+                        label: Text('YouTube'),
+                        icon: Icon(Icons.smart_display_outlined, size: 16),
+                      ),
+                    ],
+                    selected: {_searchSource},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (selection) {
+                      setState(() => _searchSource = selection.first);
+                      _performSearch();
+                    },
+                  ),
+                ],
+              ),
               const SizedBox(height: 4),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,

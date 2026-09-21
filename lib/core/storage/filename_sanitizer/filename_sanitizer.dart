@@ -1,10 +1,19 @@
 import '../../shared/text/title_cleaner.dart';
 
 class SanitizedFilename {
-  const SanitizedFilename({required this.title, required this.artist, required this.requiresUserReview});
+  const SanitizedFilename({
+    required this.title,
+    required this.artist,
+    this.featuringArtists = const [],
+    required this.requiresUserReview,
+  });
 
   final String title;
+  // Artiste principal — utilisé pour les requêtes API et les classements.
   final String artist;
+  // Artistes en featuring/collaboration détectés dans le segment artiste
+  // (séparateurs ",", "&", "x", "vs", "feat.", "ft.") — jamais dans le titre.
+  final List<String> featuringArtists;
   final bool requiresUserReview;
 }
 
@@ -71,10 +80,68 @@ class FilenameSanitizer {
   // donc sans risque sur les noms déjà correctement espacés.
   static final RegExp _camelCaseBoundary = RegExp(r'(?<=[a-zA-Z0-9])(?=[A-Z][a-z])');
 
+  // Noms d'artistes connus dont la ponctuation/les caractères spéciaux
+  // internes seraient sinon détruits par le nettoyage (points de "Fred
+  // again..") ou pris à tort pour un séparateur multi-artiste (la virgule de
+  // "Earth, Wind & Fire", le "&" de "Florence + The Machine"). Chaque entrée
+  // matche aussi les variantes courantes sur disque (espace/tiret/underscore
+  // à la place du caractère spécial, ponctuation optionnelle) : le "/" de
+  // "AC/DC" ne peut lui-même jamais apparaître dans un nom de fichier.
+  static final List<({String canonical, RegExp pattern})> _protectedArtistNames = [
+    (canonical: 'Fred again..', pattern: RegExp(r'fred\s*again\.{0,2}', caseSensitive: false)),
+    (canonical: 'AC/DC', pattern: RegExp(r'ac[\s_-]?dc', caseSensitive: false)),
+    (canonical: 'Florence + The Machine', pattern: RegExp(r'florence\s*\+\s*the\s*machine', caseSensitive: false)),
+    (canonical: 'Earth, Wind & Fire', pattern: RegExp(r'earth,?\s*wind\s*&\s*fire', caseSensitive: false)),
+    (canonical: 'Panic! At The Disco', pattern: RegExp(r'panic!?\s*at\s*the\s*disco', caseSensitive: false)),
+    (canonical: 'will.i.am', pattern: RegExp(r'will\.?i\.?am', caseSensitive: false)),
+    (canonical: 'M.I.A.', pattern: RegExp(r'\bm\.i\.a\.?\b', caseSensitive: false)),
+    (canonical: "Guns N' Roses", pattern: RegExp(r"guns\s*n'?\s*roses", caseSensitive: false)),
+    (
+      canonical: 'Crosby, Stills, Nash & Young',
+      pattern: RegExp(r'crosby,?\s*stills,?\s*nash\s*&\s*young', caseSensitive: false),
+    ),
+  ];
+
+  // Séparateurs entre artistes multiples au sein du segment artiste (jamais
+  // appliqué au titre) : virgule, esperluette, "x" isolé, "vs", "feat.",
+  // "ft.". Le "x" exige des espaces des deux côtés (pas simplement `\b`) pour
+  // ne pas couper un nom d'artiste qui commence par "X" ("X Ambassadors").
+  // "feat"/"ft"/"vs" acceptent un point final via `(?:\.|\b)` plutôt que
+  // `\.?\b` : un `\b` après un point optionnel échoue quand le point est
+  // suivi d'un espace (aucune frontière mot/non-mot entre deux non-mots), ce
+  // qui aurait laissé le point traîner devant l'artiste suivant ("feat. Sia"
+  // -> ". Sia" au lieu de "Sia").
+  static final RegExp _artistSeparator = RegExp(
+    r'\s*,\s*|\s*&\s*|\s+x\s+|\s*\bvs(?:\.|\b)\s*|\s*\bfeat(?:\.|\b)\s*|\s*\bft(?:\.|\b)\s*',
+    caseSensitive: false,
+  );
+
   SanitizedFilename sanitizeFilename(String rawFilename) {
     final String withoutExtension = rawFilename.replaceAll(RegExp(r'\.[^.]+$'), '');
 
-    String withoutTrackNumber = withoutExtension;
+    // Protège les noms d'artistes connus AVANT toute découpe/nettoyage par
+    // regex : remplacés par un caractère privé (zone d'usage privé Unicode,
+    // jamais produit par un vrai nom de fichier) insensible à toutes les
+    // regex de nettoyage ci-dessous (aucune ne matche en dehors de
+    // [0-9a-zA-Z] et de quelques mots précis), puis restaurés à la toute fin.
+    final List<String> restoreByPlaceholder = [];
+    String protectedInput = withoutExtension;
+    for (final protectedName in _protectedArtistNames) {
+      protectedInput = protectedInput.replaceAllMapped(protectedName.pattern, (match) {
+        final String placeholder = String.fromCharCode(0xE000 + restoreByPlaceholder.length);
+        restoreByPlaceholder.add(protectedName.canonical);
+        return placeholder;
+      });
+    }
+    String restoreProtectedNames(String value) {
+      String result = value;
+      for (int i = 0; i < restoreByPlaceholder.length; i++) {
+        result = result.replaceAll(String.fromCharCode(0xE000 + i), restoreByPlaceholder[i]);
+      }
+      return result;
+    }
+
+    String withoutTrackNumber = protectedInput;
     String previous;
     do {
       previous = withoutTrackNumber;
@@ -128,19 +195,36 @@ class FilenameSanitizer {
           _normalizeForComparison(parts[0]).contains(_normalizeForComparison(parts[1]))) {
         // parts[0] seul (sans le tag redondant) plutôt que la chaîne
         // complète : le tag dupliqué n'apporte rien à afficher en révision.
-        return SanitizedFilename(artist: 'Unknown', title: parts[0], requiresUserReview: true);
+        return SanitizedFilename(artist: 'Unknown', title: restoreProtectedNames(parts[0]), requiresUserReview: true);
       }
-      return SanitizedFilename(artist: parts[0], title: parts[1], requiresUserReview: false);
+      final List<String> artists = _splitArtists(parts[0]).map(restoreProtectedNames).toList();
+      return SanitizedFilename(
+        artist: artists.isNotEmpty ? artists.first : 'Unknown',
+        featuringArtists: artists.length > 1 ? artists.sublist(1) : const [],
+        title: restoreProtectedNames(parts[1]),
+        requiresUserReview: false,
+      );
     }
 
     if (parts.length > 2) {
       // Séparateurs multiples (ex. plusieurs "-") : ambigu, best-effort + review manuelle.
-      return SanitizedFilename(artist: parts.first, title: parts.sublist(1).join(' - '), requiresUserReview: true);
+      final List<String> artists = _splitArtists(parts.first).map(restoreProtectedNames).toList();
+      return SanitizedFilename(
+        artist: artists.isNotEmpty ? artists.first : 'Unknown',
+        featuringArtists: artists.length > 1 ? artists.sublist(1) : const [],
+        title: restoreProtectedNames(parts.sublist(1).join(' - ')),
+        requiresUserReview: true,
+      );
     }
 
     // Aucun séparateur trouvé : impossible de distinguer artiste/titre.
-    return SanitizedFilename(artist: 'Unknown', title: normalized, requiresUserReview: true);
+    return SanitizedFilename(artist: 'Unknown', title: restoreProtectedNames(normalized), requiresUserReview: true);
   }
+
+  /// Sépare un segment "artiste" en artiste principal + featurings sur les
+  /// séparateurs `,` `&` `x` `vs` `feat.` `ft.` — jamais appliqué au titre.
+  static List<String> _splitArtists(String artistSegment) =>
+      artistSegment.split(_artistSeparator).map((part) => part.trim()).where((part) => part.isNotEmpty).toList();
 
   /// Découpe sur [_separator] en ignorant les tirets internes à une
   /// parenthèse/crochet/accolade — sans ça, un remix noté "(JENNIE Remix -

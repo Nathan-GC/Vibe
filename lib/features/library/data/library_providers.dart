@@ -2,12 +2,14 @@ import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/networking/metadata_api_client/metadata_api_client.dart';
+import '../../../core/networking/youtube/youtube_enricher_service.dart';
 import '../../../core/storage/database/app_database.dart';
 import '../../../core/storage/database/database_provider.dart';
 import '../../../core/storage/database/duplicate_detector_service.dart';
 import '../../../core/storage/database/duplicate_track_group.dart';
 import '../../../core/storage/database/track_auto_enricher.dart';
 import '../../../core/storage/database/track_repository.dart';
+import '../../../core/storage/database/youtube_auto_enricher.dart';
 import '../../../core/storage/scanner/library_scan_service.dart';
 import '../../../core/storage/storage_manager/storage_manager_service.dart';
 
@@ -31,6 +33,21 @@ final Provider<TrackAutoEnricher> trackAutoEnricherProvider = Provider<TrackAuto
 
 final Provider<StorageManagerService> storageManagerServiceProvider = Provider<StorageManagerService>((ref) {
   return StorageManagerService();
+});
+
+final Provider<YoutubeEnricherService> youtubeEnricherServiceProvider = Provider<YoutubeEnricherService>((ref) {
+  final service = YoutubeEnricherService();
+  ref.onDispose(service.dispose);
+  return service;
+});
+
+/// Pendant YouTube de [trackAutoEnricherProvider] (Section 2) — voir
+/// [YoutubeAutoEnricher].
+final Provider<YoutubeAutoEnricher> youtubeAutoEnricherProvider = Provider<YoutubeAutoEnricher>((ref) {
+  return YoutubeAutoEnricher(
+    youtubeEnricherService: ref.watch(youtubeEnricherServiceProvider),
+    trackRepository: ref.watch(trackRepositoryProvider),
+  );
 });
 
 /// Morceaux déjà en base, les plus récents en premier.
@@ -78,7 +95,14 @@ class LibraryEnrichmentFilter extends Notifier<bool> {
 final NotifierProvider<LibraryEnrichmentFilter, bool> libraryEnrichmentFilterProvider =
     NotifierProvider<LibraryEnrichmentFilter, bool>(LibraryEnrichmentFilter.new);
 
-bool trackNeedsEnrichment(Track track) => track.coverArtPath.isEmpty || track.tags.isEmpty;
+/// Un morceau `failedPermanently` (tentatives épuisées) ou `requiresReview`
+/// (nom de fichier trop ambigu) reste sans pochette/mots-clés mais ne doit
+/// plus être proposé aux passes automatiques d'"Enrichir tout" — voir
+/// [EnrichmentStatus], [TrackRepository.shouldAttemptEnrichment].
+bool trackNeedsEnrichment(Track track) =>
+    (track.coverArtPath.isEmpty || track.tags.isEmpty) &&
+    track.enrichmentStatus != EnrichmentStatus.failedPermanently &&
+    track.enrichmentStatus != EnrichmentStatus.requiresReview;
 
 /// Morceaux strictement en double (Titre + Artiste identiques) — alerte
 /// visible dans la Bibliothèque tant que la liste n'est pas vide, voir

@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:playlist_app/core/networking/metadata_api_client/metadata_api_client.dart';
@@ -10,9 +11,20 @@ import 'package:playlist_app/core/storage/database/track_repository.dart';
 class _FakeMetadataApiClient extends MetadataApiClient {
   _FakeMetadataApiClient(this.results);
   final List<OnlineTrackResult> results;
+  int callCount = 0;
 
   @override
-  Future<List<OnlineTrackResult>> search(String query, {int limit = 15, CancelToken? cancelToken}) async => results;
+  Future<List<OnlineTrackResult>> search(String query, {int limit = 15, CancelToken? cancelToken}) async {
+    callCount++;
+    return results;
+  }
+}
+
+class _ThrowingMetadataApiClient extends MetadataApiClient {
+  @override
+  Future<List<OnlineTrackResult>> search(String query, {int limit = 15, CancelToken? cancelToken}) async {
+    throw DioException(requestOptions: RequestOptions(path: ''), type: DioExceptionType.connectionError);
+  }
 }
 
 void main() {
@@ -26,7 +38,12 @@ void main() {
 
   tearDown(() => db.close());
 
-  Future<void> insertTrack({required String id, required String title, required List<String> artists}) async {
+  Future<void> insertTrack({
+    required String id,
+    required String title,
+    required List<String> artists,
+    EnrichmentStatus status = EnrichmentStatus.pending,
+  }) async {
     await db.into(db.tracks).insert(
           TracksCompanion.insert(
             id: id,
@@ -35,6 +52,7 @@ void main() {
             artists: artists,
             durationSeconds: 180,
             filePath: '/music/$id.mp3',
+            enrichmentStatus: Value(status),
           ),
         );
   }
@@ -115,5 +133,66 @@ void main() {
     final track = await repository.findById('t1');
     expect(track!.title, 'One More Time');
     expect(track.artists, ['Daft Punk']);
+  });
+
+  group('enrichment circuit breaker', () {
+    test('marks a track failedPermanently after maxEnrichmentAttempts unreliable results, then skips the API entirely', () async {
+      await insertTrack(id: 't1', title: 'Feel Good', artists: ['Charlotte Cardin']);
+      final client = _FakeMetadataApiClient([
+        const OnlineTrackResult(artist: 'Charlotte Cardin', title: 'Confetti', album: '99 Nights'),
+      ]);
+      final enricher = TrackAutoEnricher(metadataApiClient: client, trackRepository: repository);
+
+      for (int i = 0; i < TrackRepository.maxEnrichmentAttempts; i++) {
+        final bool ok = await enricher.enrichTrack(trackId: 't1', title: 'Feel Good', artists: ['Charlotte Cardin']);
+        expect(ok, isFalse);
+      }
+      final track = await repository.findById('t1');
+      expect(track!.enrichmentStatus, EnrichmentStatus.failedPermanently);
+      expect(track.enrichmentAttempts, TrackRepository.maxEnrichmentAttempts);
+
+      final int callsBeforeExtraAttempt = client.callCount;
+      final bool okAfterBanned = await enricher.enrichTrack(trackId: 't1', title: 'Feel Good', artists: ['Charlotte Cardin']);
+      expect(okAfterBanned, isFalse);
+      expect(client.callCount, callsBeforeExtraAttempt, reason: 'failedPermanently must not trigger another API call');
+    });
+
+    test('marks a successful enrichment as success', () async {
+      await insertTrack(id: 't1', title: 'One More Time', artists: ['Daft Punk']);
+      final enricher = TrackAutoEnricher(
+        metadataApiClient: _FakeMetadataApiClient([
+          const OnlineTrackResult(artist: 'Daft Punk', title: 'One More Time', album: 'Discovery'),
+        ]),
+        trackRepository: repository,
+      );
+
+      await enricher.enrichTrack(trackId: 't1', title: 'One More Time', artists: ['Daft Punk']);
+
+      final track = await repository.findById('t1');
+      expect(track!.enrichmentStatus, EnrichmentStatus.success);
+    });
+
+    test('skips tracks already marked requiresReview without calling the API', () async {
+      await insertTrack(id: 't1', title: 'Sounds', artists: ['Unknown'], status: EnrichmentStatus.requiresReview);
+      final client = _FakeMetadataApiClient(const [OnlineTrackResult(artist: 'Should Not', title: 'Be Used')]);
+      final enricher = TrackAutoEnricher(metadataApiClient: client, trackRepository: repository);
+
+      final bool ok = await enricher.enrichTrack(trackId: 't1', title: 'Sounds', artists: ['Unknown']);
+
+      expect(ok, isFalse);
+      expect(client.callCount, 0);
+    });
+
+    test('a network failure does not consume an attempt (stays retryable)', () async {
+      await insertTrack(id: 't1', title: 'One More Time', artists: ['Daft Punk']);
+      final enricher = TrackAutoEnricher(metadataApiClient: _ThrowingMetadataApiClient(), trackRepository: repository);
+
+      final bool ok = await enricher.enrichTrack(trackId: 't1', title: 'One More Time', artists: ['Daft Punk']);
+
+      expect(ok, isFalse);
+      final track = await repository.findById('t1');
+      expect(track!.enrichmentStatus, EnrichmentStatus.pending);
+      expect(track.enrichmentAttempts, 0);
+    });
   });
 }

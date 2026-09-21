@@ -1,6 +1,7 @@
 import '../../networking/metadata_api_client/metadata_api_client.dart';
 import '../../networking/metadata_api_client/online_track_result.dart';
 import '../../networking/metadata_api_client/track_match_confidence.dart';
+import 'track_enricher.dart';
 import 'track_repository.dart';
 
 /// Enrichissement iTunes partagé entre l'action manuelle de la Bibliothèque
@@ -8,7 +9,7 @@ import 'track_repository.dart';
 /// LibraryScreen._importFiles, OnboardingScanController.start) — évite de
 /// dupliquer la construction de requête et le filtre de confiance à chaque
 /// appelant.
-class TrackAutoEnricher {
+class TrackAutoEnricher implements TrackEnricher {
   TrackAutoEnricher({required MetadataApiClient metadataApiClient, required TrackRepository trackRepository})
       : _metadataApiClient = metadataApiClient,
         _trackRepository = trackRepository;
@@ -53,22 +54,52 @@ class TrackAutoEnricher {
   /// tentative primaire, qui elle ne touche jamais Titre/Artiste. Dans le pire
   /// cas où l'ordre inversé ne trouve rien de fiable non plus, rien n'est
   /// appliqué.
+  @override
   Future<bool> enrichTrack({required String trackId, required String title, required List<String> artists}) async {
+    // Circuit-breaker (voir TrackRepository.shouldAttemptEnrichment) : un
+    // morceau `failedPermanently` (tentatives épuisées) ou `requiresReview`
+    // (nom de fichier trop ambigu) ne doit plus jamais déclencher de requête
+    // API tant qu'une correction manuelle ne l'a pas réinitialisé.
+    if (!await _trackRepository.shouldAttemptEnrichment(trackId)) return false;
+
     final String artist = artists.isNotEmpty ? artists.first : '';
 
-    final OnlineTrackResult? primaryMatch = await _search(localTitle: title, localArtists: artists, queryArtist: artist, queryTitle: title);
+    OnlineTrackResult? primaryMatch;
+    try {
+      primaryMatch = await _search(localTitle: title, localArtists: artists, queryArtist: artist, queryTitle: title);
+    } catch (_) {
+      // Erreur réseau/API (déjà retentée en interne par MetadataApiClient) :
+      // ne compte pas comme une tentative épuisée, sans quoi un simple blocage
+      // temporaire iTunes (403) finirait par bannir des morceaux parfaitement
+      // enrichissables une fois la limitation levée.
+      return false;
+    }
     if (primaryMatch != null) {
-      return _trackRepository.enrichFromOnlineMetadata(trackId, primaryMatch);
+      final bool ok = await _trackRepository.enrichFromOnlineMetadata(trackId, primaryMatch);
+      await _trackRepository.recordEnrichmentOutcome(trackId, success: ok);
+      return ok;
     }
 
     final bool hasBothFields = artist.isNotEmpty && artist != 'Unknown' && title.isNotEmpty;
-    if (!hasBothFields) return false;
+    if (!hasBothFields) {
+      await _trackRepository.recordEnrichmentOutcome(trackId, success: false);
+      return false;
+    }
 
-    final OnlineTrackResult? swappedMatch =
-        await _search(localTitle: artist, localArtists: [title], queryArtist: title, queryTitle: artist);
-    if (swappedMatch == null) return false;
+    OnlineTrackResult? swappedMatch;
+    try {
+      swappedMatch = await _search(localTitle: artist, localArtists: [title], queryArtist: title, queryTitle: artist);
+    } catch (_) {
+      return false;
+    }
+    if (swappedMatch == null) {
+      await _trackRepository.recordEnrichmentOutcome(trackId, success: false);
+      return false;
+    }
 
-    return _trackRepository.correctReversedTitleArtist(trackId, swappedMatch);
+    final bool ok = await _trackRepository.correctReversedTitleArtist(trackId, swappedMatch);
+    await _trackRepository.recordEnrichmentOutcome(trackId, success: ok);
+    return ok;
   }
 
   Future<OnlineTrackResult?> _search({
@@ -83,12 +114,8 @@ class TrackAutoEnricher {
     ].join(' ').trim();
     if (query.isEmpty) return null;
 
-    try {
-      final List<OnlineTrackResult> results = await _metadataApiClient.search(query, limit: candidateLimit);
-      return TrackMatchConfidence.pickBestMatch(localTitle: localTitle, localArtists: localArtists, candidates: results);
-    } catch (_) {
-      return null;
-    }
+    final List<OnlineTrackResult> results = await _metadataApiClient.search(query, limit: candidateLimit);
+    return TrackMatchConfidence.pickBestMatch(localTitle: localTitle, localArtists: localArtists, candidates: results);
   }
 
   static String _searchTitleFor(String title) => title.replaceFirst(_trailingFeatureClauseForQuery, '').trim();

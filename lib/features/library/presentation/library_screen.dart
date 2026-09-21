@@ -5,9 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/shared/widgets/enrichment_source_dialog.dart';
 import '../../../core/shared/widgets/track_actions_sheet.dart';
 import '../../../core/storage/database/app_database.dart';
 import '../../../core/storage/database/duplicate_track_group.dart';
+import '../../../core/storage/database/track_enricher.dart';
 import '../../../core/storage/database/track_repository.dart';
 import '../../../core/storage/scanner/scanned_track.dart';
 import '../../../core/storage/storage_manager/imported_audio_file.dart';
@@ -82,26 +84,33 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       }
 
       int enriched = 0;
-      if (renamedTracks.isNotEmpty) {
-        final enricher = ref.read(trackAutoEnricherProvider);
-        for (int i = 0; i < renamedTracks.length; i++) {
-          if (mounted) {
-            setState(() => _statusMessage = 'Enrichissement ${i + 1} / ${renamedTracks.length}...');
+      bool enrichmentSkipped = false;
+      if (renamedTracks.isNotEmpty && mounted) {
+        final EnrichmentSource? source = await _pickEnrichmentSource();
+        if (source == null) {
+          enrichmentSkipped = true;
+        } else {
+          final TrackEnricher enricher = _enricherFor(source);
+          for (int i = 0; i < renamedTracks.length; i++) {
+            if (mounted) {
+              setState(() => _statusMessage = 'Enrichissement ${i + 1} / ${renamedTracks.length}...');
+            }
+            final ScannedTrack track = renamedTracks[i];
+            final bool ok = await enricher.enrichTrack(
+              trackId: track.id,
+              title: track.title,
+              artists: track.artists,
+            );
+            if (ok) enriched++;
           }
-          final ScannedTrack track = renamedTracks[i];
-          final bool ok = await enricher.enrichTrack(
-            trackId: track.id,
-            title: track.title,
-            artists: track.artists,
-          );
-          if (ok) enriched++;
         }
       }
 
       if (!mounted) return;
       final String summary = [
         '$imported importé(s)',
-        if (renamedTracks.isNotEmpty) '$enriched/${renamedTracks.length} renommé(s) enrichi(s)',
+        if (renamedTracks.isNotEmpty && !enrichmentSkipped) '$enriched/${renamedTracks.length} renommé(s) enrichi(s)',
+        if (enrichmentSkipped) 'enrichissement ignoré',
         if (tooShort > 0) '$tooShort trop court(s) ou illisible(s)',
         if (failed > 0) '$failed échec(s)${lastError == null ? '' : ' : $lastError'}',
       ].join(', ');
@@ -124,6 +133,17 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     showDialog<void>(context: context, builder: (context) => MetadataEditorModal(track: track));
   }
 
+  /// Choix de la source pour un enrichissement global (Section 2.1) —
+  /// affiché une fois par lancement d'"Enrichir tout" ou post-import, jamais
+  /// pour un enrichissement individuel (voir MetadataEditorModal pour le
+  /// choix de source par morceau). `null` si l'utilisateur annule.
+  Future<EnrichmentSource?> _pickEnrichmentSource() => showEnrichmentSourceDialog(context);
+
+  TrackEnricher _enricherFor(EnrichmentSource source) => switch (source) {
+        EnrichmentSource.itunes => ref.read(trackAutoEnricherProvider),
+        EnrichmentSource.youtube => ref.read(youtubeAutoEnricherProvider),
+      };
+
   /// Scanner de nettoyage des artistes (Feuille de route Vibe v5) : fusionne
   /// les variantes de casse d'un même nom ("DAFT PUNK"/"daft punk") sous une
   /// unique entité en Title Case.
@@ -139,22 +159,23 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     );
   }
 
-  /// Cherche la meilleure correspondance iTunes pour [track] et enrichit
-  /// pochette HD / genre / époque en base. Non destructif (voir
-  /// TrackRepository.enrichFromOnlineMetadata) : sûr à relancer. Partagé avec
-  /// l'enrichissement automatique de post-import (voir TrackAutoEnricher).
-  Future<bool> _enrichTrack(Track track) {
-    return ref.read(trackAutoEnricherProvider).enrichTrack(
-          trackId: track.id,
-          title: track.title,
-          artists: track.artists,
-        );
+  /// Cherche la meilleure correspondance pour [track] via [enricher] (iTunes
+  /// ou YouTube, voir [_pickEnrichmentSource]) et enrichit pochette HD /
+  /// genre / époque en base. Non destructif (voir
+  /// TrackRepository.enrichFromOnlineMetadata) : sûr à relancer.
+  Future<bool> _enrichTrack(Track track, TrackEnricher enricher) {
+    return enricher.enrichTrack(trackId: track.id, title: track.title, artists: track.artists);
   }
 
+  /// Enrichissement individuel (bouton rapide sur un morceau) — toujours
+  /// iTunes : pas de sélection de source pour ce cas précis (voir Section
+  /// 2.1, réservée à "Enrichir tout"/post-import), le choix par morceau se
+  /// fait plutôt dans MetadataEditorModal (Section 2.3).
   Future<void> _enrichSingle(Track track) async {
+    final TrackEnricher enricher = ref.read(trackAutoEnricherProvider);
     bool found = false;
     for (int attempt = 1; attempt <= _maxEnrichmentPasses && !found; attempt++) {
-      found = await _enrichTrack(track);
+      found = await _enrichTrack(track, enricher);
     }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -184,6 +205,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       return;
     }
 
+    final EnrichmentSource? source = await _pickEnrichmentSource();
+    if (source == null || !mounted) return;
+    final TrackEnricher enricher = _enricherFor(source);
+
     setState(() => _busy = true);
 
     int totalEnriched = 0;
@@ -195,7 +220,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         if (mounted) {
           setState(() => _statusMessage = 'Enrichissement (passe $pass/$_maxEnrichmentPasses) ${i + 1} / ${targets.length}...');
         }
-        if (await _enrichTrack(targets[i])) {
+        if (await _enrichTrack(targets[i], enricher)) {
           enrichedThisPass++;
           totalEnriched++;
         }

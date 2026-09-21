@@ -65,7 +65,7 @@ class LibraryScanService {
     } else {
       final SanitizedFilename sanitized = fallbackSanitize();
       title = sanitized.title;
-      artists = [sanitized.artist];
+      artists = [sanitized.artist, ...sanitized.featuringArtists];
       requiresUserReview = sanitized.requiresUserReview;
       wasRenamedFromFilename = true;
     }

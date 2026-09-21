@@ -34,6 +34,34 @@ class VibePresetConverter extends TypeConverter<VibePreset, String> {
   String toSql(VibePreset value) => value.name;
 }
 
+/// Statut du circuit-breaker d'enrichissement automatique (voir
+/// `Tracks.enrichmentStatus`, `TrackAutoEnricher`, `TrackRepository.
+/// shouldAttemptEnrichment`/`recordEnrichmentOutcome`) :
+///  - [pending] : éligible aux prochaines tentatives auto (post-import,
+///    "Enrichir tout").
+///  - [success] : déjà enrichi avec confiance, plus besoin de retenter.
+///  - [failedPermanently] : `maxEnrichmentAttempts` tentatives épuisées sans
+///    correspondance fiable — ne repasse plus jamais dans la file
+///    automatique (jusqu'à une correction manuelle, voir
+///    `TrackRepository.updateMetadata`, qui réinitialise ce statut).
+///  - [requiresReview] : titre/artiste trop ambigus dès le nom de fichier
+///    (`requiresUserReview`) pour même tenter une requête API — évite de
+///    gaspiller des appels réseau sur un morceau qu'une confirmation humaine
+///    va de toute façon changer.
+enum EnrichmentStatus { pending, success, failedPermanently, requiresReview }
+
+class EnrichmentStatusConverter extends TypeConverter<EnrichmentStatus, String> {
+  const EnrichmentStatusConverter();
+
+  @override
+  EnrichmentStatus fromSql(String fromDb) {
+    return EnrichmentStatus.values.firstWhere((status) => status.name == fromDb, orElse: () => EnrichmentStatus.pending);
+  }
+
+  @override
+  String toSql(EnrichmentStatus value) => value.name;
+}
+
 /// `id` = sanitized key (title_slug + album_slug + primary_artist_slug), voir
 /// core/identity/track_key.dart. `artists` conserve tous les featurings en
 /// tableau JSON, jamais aplatis en string ("Daft Punk feat. Justice" interdit).
@@ -72,6 +100,12 @@ class Tracks extends Table {
   IntColumn get trackNumber => integer().withDefault(const Constant(0))();
   IntColumn get discNumber => integer().withDefault(const Constant(0))();
   IntColumn get trackCount => integer().withDefault(const Constant(0))();
+  // Circuit-breaker de l'enrichissement automatique — voir [EnrichmentStatus].
+  // Un morceau nouvellement scanné démarre à `requiresReview` s'il est déjà
+  // `requiresUserReview` (nom de fichier ambigu), sinon `pending`.
+  IntColumn get enrichmentAttempts => integer().withDefault(const Constant(0))();
+  TextColumn get enrichmentStatus =>
+      text().map(const EnrichmentStatusConverter()).withDefault(const Constant('pending'))();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -149,7 +183,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -175,6 +209,18 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 7) {
             await m.addColumn(playlists, playlists.coverImagePath);
+          }
+          if (from < 8) {
+            await m.addColumn(tracks, tracks.enrichmentAttempts);
+            await m.addColumn(tracks, tracks.enrichmentStatus);
+            // Les morceaux déjà en base avant cette version n'ont jamais eu de
+            // statut : les tracks encore "à vérifier" démarrent directement en
+            // `requiresReview` (comme un nouveau scan) pour ne pas gaspiller de
+            // requêtes API dessus tant qu'un humain n'a pas confirmé
+            // Titre/Artiste.
+            await (update(tracks)..where((t) => t.requiresUserReview.equals(true))).write(
+              const TracksCompanion(enrichmentStatus: Value(EnrichmentStatus.requiresReview)),
+            );
           }
         },
       );
