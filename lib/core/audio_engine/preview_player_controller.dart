@@ -42,8 +42,14 @@ class PreviewPlayerController extends _$PreviewPlayerController {
     return null;
   }
 
-  Future<void> togglePreview(String url) async {
-    if (state == url) {
+  /// [urlOrPath] : URL distante (previews iTunes 20-30s, [OnlineTrackCard])
+  /// ou chemin de fichier local (extrait d'un morceau déjà téléchargé,
+  /// Section 6.1, voir TrackActionsSheet) — distingués par le même critère
+  /// "http" que partout ailleurs dans l'app (ex. Tracks.coverArtPath).
+  /// [startAt] ne s'applique qu'aux fichiers locaux : démarre après le
+  /// silence de tête déjà détecté (`trimStartMs`) plutôt qu'au tout début.
+  Future<void> togglePreview(String urlOrPath, {Duration startAt = Duration.zero}) async {
+    if (state == urlOrPath) {
       await stop();
       return;
     }
@@ -58,14 +64,19 @@ class PreviewPlayerController extends _$PreviewPlayerController {
       await mainPlayer.pause();
     }
 
-    await _player.setUrl(url);
+    if (urlOrPath.startsWith('http')) {
+      await _player.setUrl(urlOrPath);
+    } else {
+      await _player.setFilePath(urlOrPath);
+      if (startAt > Duration.zero) await _player.seek(startAt);
+    }
     // Ne PAS `await` ici : le Future de `play()` de just_audio ne se résout
     // qu'à l'arrêt de la lecture (pause/fin de piste), pas à son démarrage.
     // L'attendre retardait `state = url` jusqu'à la fin de la preview —
     // bug réel observé : l'extrait jouait bel et bien, mais aucune carte
     // n'affichait jamais l'icône "en lecture" pendant les ~30s d'écoute.
     unawaited(_player.play());
-    state = url;
+    state = urlOrPath;
 
     _autoStopTimer = Timer(const Duration(seconds: 30), stop);
   }
