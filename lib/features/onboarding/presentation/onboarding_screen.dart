@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/shared/widgets/enrichment_source_dialog.dart';
-import '../../../core/storage/database/track_enricher.dart';
 import '../../../core/storage/scanner/full_device_scan_service.dart';
 import '../data/onboarding_providers.dart';
 
@@ -26,25 +24,22 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 
   Future<void> _runScan() async {
-    // Choisi une seule fois avant le scan plutôt qu'après (Section 2.1) :
-    // contrairement à l'import manuel, on ne sait pas encore à ce stade si
-    // des morceaux renommés existeront — le premier lancement scanne la
-    // bibliothèque entière, où au moins un fichier ambigu est la norme plutôt
-    // que l'exception. `null` (dialogue fermé sans choix) retombe sur iTunes
-    // plutôt que de renoncer silencieusement à tout enrichissement du premier
-    // lancement.
-    final EnrichmentSource source = mounted
-        ? await showEnrichmentSourceDialog(context) ?? EnrichmentSource.itunes
-        : EnrichmentSource.itunes;
-    await ref.read(onboardingScanControllerProvider.notifier).start(source: source);
+    // Premier scan : iTunes exclusivement, sans aucune question posée à
+    // l'utilisateur (voir "Recadrage du Workflow d'Enrichissement" —
+    // seul l'enrichissement global explicite, bouton étoile de la
+    // Bibliothèque, propose un choix de source).
+    await ref.read(onboardingScanControllerProvider.notifier).start();
     if (mounted) context.go('/player');
   }
 
   @override
   Widget build(BuildContext context) {
-    final OnboardingScanState state = ref.watch(onboardingScanControllerProvider);
+    final OnboardingScanState state =
+        ref.watch(onboardingScanControllerProvider);
     final double? progressValue = state.isEnriching
-        ? (state.enrichmentTotal > 0 ? state.enrichmentProcessed / state.enrichmentTotal : null)
+        ? (state.enrichmentTotal > 0
+            ? state.enrichmentProcessed / state.enrichmentTotal
+            : null)
         : (state.total > 0 ? state.processed / state.total : null);
 
     return Scaffold(
@@ -56,12 +51,15 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             children: [
               const Icon(Icons.library_music_outlined, size: 64),
               const SizedBox(height: 24),
-              Text('Bienvenue', style: Theme.of(context).textTheme.headlineSmall),
+              Text('Bienvenue',
+                  style: Theme.of(context).textTheme.headlineSmall),
               const SizedBox(height: 8),
               Text(
                 state.permissionDenied
                     ? 'Permission audio refusée — tu pourras importer tes morceaux manuellement depuis Découverte.'
-                    : (state.isEnriching ? 'Enrichissement des morceaux renommés...' : _statusLabel(state)),
+                    : (state.isEnriching
+                        ? 'Enrichissement des morceaux renommés...'
+                        : _statusLabel(state)),
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
@@ -75,7 +73,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     style: Theme.of(context).textTheme.bodySmall,
                   )
                 else if (state.total > 0)
-                  Text('${state.processed}/${state.total} morceaux traités', style: Theme.of(context).textTheme.bodySmall),
+                  Text('${state.processed}/${state.total} morceaux traités',
+                      style: Theme.of(context).textTheme.bodySmall),
                 if (state.skippedIncompleteDownloads > 0) ...[
                   const SizedBox(height: 4),
                   Text(

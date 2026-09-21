@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/audio_engine/player_immersive_mode_provider.dart';
 import '../features/discovery/presentation/artist_profile_screen.dart';
 import '../features/discovery/presentation/discovery_screen.dart';
 import '../features/discovery/presentation/import_screen.dart';
@@ -17,70 +20,126 @@ import '../features/settings/presentation/settings_screen.dart';
 final GoRouter appRouter = GoRouter(
   initialLocation: '/player',
   routes: [
-    GoRoute(path: '/onboarding', builder: (context, state) => const OnboardingScreen()),
-    GoRoute(path: '/settings', builder: (context, state) => const SettingsScreen()),
+    GoRoute(
+        path: '/onboarding',
+        builder: (context, state) => const OnboardingScreen()),
+    GoRoute(
+        path: '/settings', builder: (context, state) => const SettingsScreen()),
     StatefulShellRoute.indexedStack(
-      builder: (context, state, navigationShell) => _TabShell(navigationShell: navigationShell),
+      builder: (context, state, navigationShell) =>
+          _TabShell(navigationShell: navigationShell),
       branches: [
         StatefulShellBranch(
-          routes: [GoRoute(path: '/discovery', builder: (context, state) => const DiscoveryScreen())],
+          routes: [
+            GoRoute(
+                path: '/discovery',
+                builder: (context, state) => const DiscoveryScreen())
+          ],
         ),
         StatefulShellBranch(
-          routes: [GoRoute(path: '/player', builder: (context, state) => const MasterPlayerScreen())],
+          routes: [
+            GoRoute(
+                path: '/player',
+                builder: (context, state) => const MasterPlayerScreen())
+          ],
         ),
         StatefulShellBranch(
-          routes: [GoRoute(path: '/space', builder: (context, state) => const PersonalSpaceScreen())],
+          routes: [
+            GoRoute(
+                path: '/space',
+                builder: (context, state) => const PersonalSpaceScreen())
+          ],
         ),
       ],
     ),
     GoRoute(
       path: '/discovery/artist/:artistName',
-      builder: (context, state) => ArtistProfileScreen(artistName: state.pathParameters['artistName']!),
+      builder: (context, state) =>
+          ArtistProfileScreen(artistName: state.pathParameters['artistName']!),
     ),
-    GoRoute(path: '/discovery/import', builder: (context, state) => const ImportScreen()),
+    GoRoute(
+        path: '/discovery/import',
+        builder: (context, state) => const ImportScreen()),
     GoRoute(
       path: '/space/playlist/:playlistId/edit',
-      builder: (context, state) => PlaylistEditorScreen(playlistId: state.pathParameters['playlistId']!),
+      builder: (context, state) =>
+          PlaylistEditorScreen(playlistId: state.pathParameters['playlistId']!),
     ),
     GoRoute(
       path: '/space/playlist/:playlistId/vibe',
-      builder: (context, state) => VibeCustomizerScreen(playlistId: state.pathParameters['playlistId']!),
+      builder: (context, state) =>
+          VibeCustomizerScreen(playlistId: state.pathParameters['playlistId']!),
     ),
-    GoRoute(path: '/space/cleanup', builder: (context, state) => const OrphanCleanupScreen()),
-    GoRoute(path: '/space/library', builder: (context, state) => const LibraryScreen()),
-    GoRoute(path: '/space/library/duplicates', builder: (context, state) => const DuplicateTracksScreen()),
+    GoRoute(
+        path: '/space/cleanup',
+        builder: (context, state) => const OrphanCleanupScreen()),
+    GoRoute(
+        path: '/space/library',
+        builder: (context, state) => const LibraryScreen()),
+    GoRoute(
+        path: '/space/library/duplicates',
+        builder: (context, state) => const DuplicateTracksScreen()),
   ],
 );
 
-class _TabShell extends StatelessWidget {
+/// Hiérarchie du bouton Retour Android au niveau de la coque de navigation
+/// (Ergonomie & Navigation Android, 2.B) : les pages de détail/modales sont
+/// des `GoRoute` sœurs poussées sur le Navigator racine au-dessus de ce Shell
+/// (voir `/discovery/artist/:artistName`, `/space/playlist/:id/edit`, etc.),
+/// donc le pop par défaut de Flutter les referme déjà avant que ce `PopScope`
+/// ne soit jamais atteint (2.B.1). Ce qui reste à gérer ici : depuis
+/// Découverte/Espace, Retour bascule vers l'onglet Lecteur plutôt que de
+/// quitter l'app (2.B.2) ; depuis Lecteur, Retour réduit d'abord le mode
+/// immersif du Master Player avant d'autoriser la sortie (2.B.3).
+class _TabShell extends ConsumerWidget {
   const _TabShell({required this.navigationShell});
 
   final StatefulNavigationShell navigationShell;
 
+  static const int _playerTabIndex = 1;
+
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: navigationShell,
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: navigationShell.currentIndex,
-        onDestinationSelected: navigationShell.goBranch,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.explore_outlined),
-            selectedIcon: Icon(Icons.explore),
-            label: 'Découverte',
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bool isImmersive = ref.watch(playerImmersiveModeProvider);
+    final bool onPlayerTab = navigationShell.currentIndex == _playerTabIndex;
+
+    return PopScope(
+      canPop: onPlayerTab && !isImmersive,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) return;
+        if (!onPlayerTab) {
+          navigationShell.goBranch(_playerTabIndex);
+          return;
+        }
+        ref.read(playerImmersiveModeProvider.notifier).set(false);
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      },
+      child: Scaffold(
+        body: navigationShell,
+        bottomNavigationBar: SafeArea(
+          bottom: true,
+          child: NavigationBar(
+            selectedIndex: navigationShell.currentIndex,
+            onDestinationSelected: navigationShell.goBranch,
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.explore_outlined),
+                selectedIcon: Icon(Icons.explore),
+                label: 'Découverte',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.play_circle_outline),
+                selectedIcon: Icon(Icons.play_circle),
+                label: 'Lecteur',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.library_music_outlined),
+                selectedIcon: Icon(Icons.library_music),
+                label: 'Espace',
+              ),
+            ],
           ),
-          NavigationDestination(
-            icon: Icon(Icons.play_circle_outline),
-            selectedIcon: Icon(Icons.play_circle),
-            label: 'Lecteur',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.library_music_outlined),
-            selectedIcon: Icon(Icons.library_music),
-            label: 'Espace',
-          ),
-        ],
+        ),
       ),
     );
   }
