@@ -76,13 +76,27 @@ class TrackRepository {
   }
 
   Future<void> upsertTrack(ScannedTrack scanned) {
+    // Un même artiste peut apparaître plusieurs fois dans le nom de fichier
+    // sanitizé (ex. "Hunter X Hunter" scindé par erreur en featuring
+    // "Hunter" + "Hunter" par le séparateur multi-artiste, qui traite le "X"
+    // du titre comme un séparateur) — dédupliquer ici, ordre préservé
+    // (première occurrence gagnante, même règle que
+    // [mergeDuplicateCaseArtists]), avant d'écrire dans `track_artists` :
+    // sans quoi la contrainte UNIQUE(track_id, artist_name) fait planter tout
+    // le scan sur ce morceau (crash réel observé lors d'un scan plein-appareil
+    // sur une grosse bibliothèque).
+    final List<String> artists = [];
+    for (final name in scanned.artists) {
+      if (!artists.contains(name)) artists.add(name);
+    }
+
     return _db.transaction(() async {
       await _db.into(_db.tracks).insertOnConflictUpdate(
             TracksCompanion.insert(
               id: scanned.id,
               title: scanned.title,
               album: scanned.album,
-              artists: scanned.artists,
+              artists: artists,
               durationSeconds: scanned.durationMs ~/ 1000,
               filePath: scanned.filePath,
               trimStartMs: Value(scanned.trimStartMs),
@@ -101,11 +115,11 @@ class TrackRepository {
 
       await (_db.delete(_db.trackArtists)..where((t) => t.trackId.equals(scanned.id))).go();
 
-      if (scanned.artists.isNotEmpty) {
+      if (artists.isNotEmpty) {
         await _db.batch((batch) {
           batch.insertAll(_db.trackArtists, [
-            for (int i = 0; i < scanned.artists.length; i++)
-              TrackArtistsCompanion.insert(trackId: scanned.id, artistName: scanned.artists[i], position: i),
+            for (int i = 0; i < artists.length; i++)
+              TrackArtistsCompanion.insert(trackId: scanned.id, artistName: artists[i], position: i),
           ]);
         });
       }
