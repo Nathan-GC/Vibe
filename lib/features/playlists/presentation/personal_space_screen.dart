@@ -11,7 +11,6 @@ import '../../../core/theme/vibe_engine/playlist_vibe_resolver.dart';
 import '../../../core/theme/vibe_engine/vibe_engine.dart';
 import '../data/playlist_providers.dart';
 import '../data/playlist_repository.dart';
-import 'playlist_keywords_dialog.dart';
 
 /// Tab 3 : bibliothèque de playlists locales — accès à l'éditeur, au Vibe
 /// Customizer, à "Pour compléter..." (Étape 4), et lecture directe.
@@ -185,15 +184,11 @@ class _PlaylistTile extends ConsumerWidget {
           PopupMenuButton<_PlaylistAction>(
             onSelected: (action) async {
               switch (action) {
-                case _PlaylistAction.complete:
-                  context.push('/space/playlist/${playlist.id}/complete');
                 case _PlaylistAction.export:
                   final file = await ref.read(playlistManifestServiceProvider).exportManifestToFile(playlist.id);
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Exporté : ${file.path}')));
                   }
-                case _PlaylistAction.keywords:
-                  showDialog<void>(context: context, builder: (context) => PlaylistKeywordsDialog(playlist: playlist));
                 case _PlaylistAction.rename:
                   await _rename(context, ref);
                 case _PlaylistAction.delete:
@@ -201,9 +196,7 @@ class _PlaylistTile extends ConsumerWidget {
               }
             },
             itemBuilder: (context) => [
-              const PopupMenuItem(value: _PlaylistAction.complete, child: Text('Pour compléter...')),
               const PopupMenuItem(value: _PlaylistAction.export, child: Text('Exporter en JSON')),
-              const PopupMenuItem(value: _PlaylistAction.keywords, child: Text('Mots-clés')),
               if (!_isSystemPlaylist) ...[
                 const PopupMenuDivider(),
                 const PopupMenuItem(value: _PlaylistAction.rename, child: Text('Renommer la playlist')),
@@ -217,7 +210,7 @@ class _PlaylistTile extends ConsumerWidget {
   }
 }
 
-enum _PlaylistAction { complete, export, keywords, rename, delete }
+enum _PlaylistAction { export, rename, delete }
 
 /// Contenu de la boîte "Renommer la playlist", en `StatefulWidget` distinct
 /// pour que son `TextEditingController` soit disposé par `State.dispose()`

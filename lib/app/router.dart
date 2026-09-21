@@ -13,7 +13,6 @@ import '../features/playlists/presentation/editor/playlist_editor_screen.dart';
 import '../features/playlists/presentation/personal_space_screen.dart';
 import '../features/playlists/presentation/vibe_customizer/vibe_customizer_screen.dart';
 import '../features/settings/presentation/settings_screen.dart';
-import '../features/suggestions/presentation/complete_playlist_screen.dart';
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/player',
@@ -39,10 +38,6 @@ final GoRouter appRouter = GoRouter(
       builder: (context, state) => ArtistProfileScreen(artistName: state.pathParameters['artistName']!),
     ),
     GoRoute(path: '/discovery/import', builder: (context, state) => const ImportScreen()),
-    GoRoute(
-      path: '/space/playlist/:playlistId/complete',
-      builder: (context, state) => CompletePlaylistScreen(playlistId: state.pathParameters['playlistId']!),
-    ),
     GoRoute(
       path: '/space/playlist/:playlistId/edit',
       builder: (context, state) => PlaylistEditorScreen(playlistId: state.pathParameters['playlistId']!),

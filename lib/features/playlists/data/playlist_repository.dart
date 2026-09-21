@@ -40,13 +40,6 @@ abstract class PlaylistRepository {
 
   Future<void> updateVibeStyle(String playlistId, VibePreset vibeStyle);
 
-  /// Mots-clés de style saisis manuellement par l'utilisateur pour décrire
-  /// l'ambiance de la playlist (Étape 4) — distincts des tags genre/mood/
-  /// époque des morceaux (issus d'iTunes, voir Tracks.tags) : purement
-  /// descriptifs, ils n'alimentent pas le moteur de recommandation local, qui
-  /// se base sur les tags des morceaux déjà présents dans la playlist.
-  Future<void> updateTags(String playlistId, List<String> tags);
-
   /// Bascule la playlist sur `VibePreset.custom` et enregistre les couleurs
   /// de dégradé (2 minimum), la couleur d'accentuation explicite des boutons/
   /// éléments interactifs, l'effet de fond ([VibeCustomEffect]) et/ou l'image

@@ -37,6 +37,16 @@ class _ArtistProfileScreenState extends ConsumerState<ArtistProfileScreen> {
     final AsyncValue<List<Track>> tracks = ref.watch(
       artistTracksProvider((artistName: widget.artistName, filter: _filter, sort: _sort)),
     );
+    // Section 5.3 : les extraits en ligne ne doivent suggérer que des titres
+    // absents de la bibliothèque locale — comparaison sur tous les morceaux
+    // locaux de l'artiste (`ArtistFilter.all`), indépendamment du filtre/tri
+    // actuellement sélectionné dans les chips ci-dessous.
+    final AsyncValue<List<Track>> allLocalTracks = ref.watch(
+      artistTracksProvider((artistName: widget.artistName, filter: ArtistFilter.all, sort: ArtistSort.chronological)),
+    );
+    final Set<String> localTrackTitles = {
+      for (final track in allLocalTracks.value ?? const <Track>[]) track.title.trim().toLowerCase(),
+    };
 
     return Scaffold(
       appBar: AppBar(title: Text(widget.artistName)),
@@ -45,7 +55,7 @@ class _ArtistProfileScreenState extends ConsumerState<ArtistProfileScreen> {
         children: [
           _ArtistHeader(metadata: metadata),
           const SizedBox(height: 20),
-          _TopTracksSection(artistName: widget.artistName),
+          _TopTracksSection(artistName: widget.artistName, localTrackTitles: localTrackTitles),
           const SizedBox(height: 20),
           _DiscographySection(artistName: widget.artistName),
           const SizedBox(height: 20),
@@ -121,10 +131,13 @@ class _ArtistHeader extends StatelessWidget {
 /// "Morceaux populaires" — top titres iTunes de l'artiste (découverte, pas la
 /// bibliothèque locale). Cartes réutilisant [OnlineTrackCard] telles quelles :
 /// extrait 30s, badge explicite, bouton "+" (voir online_track_actions.dart).
+/// Section 5.3 : ne montre que les titres absents de [localTrackTitles],
+/// jamais un doublon d'un morceau déjà téléchargé.
 class _TopTracksSection extends ConsumerWidget {
-  const _TopTracksSection({required this.artistName});
+  const _TopTracksSection({required this.artistName, required this.localTrackTitles});
 
   final String artistName;
+  final Set<String> localTrackTitles;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -132,7 +145,9 @@ class _TopTracksSection extends ConsumerWidget {
     final VibeVisual vibe = ref.watch(activeVibeProvider);
 
     return topTracks.when(
-      data: (data) {
+      data: (allData) {
+        final List<OnlineTrackResult> data =
+            allData.where((track) => !localTrackTitles.contains(track.title.trim().toLowerCase())).toList();
         if (data.isEmpty) return const SizedBox.shrink();
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,

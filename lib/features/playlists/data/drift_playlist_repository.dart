@@ -106,12 +106,6 @@ class DriftPlaylistRepository implements PlaylistRepository {
   }
 
   @override
-  Future<void> updateTags(String playlistId, List<String> tags) {
-    return (_db.update(_db.playlists)..where((p) => p.id.equals(playlistId)))
-        .write(PlaylistsCompanion(tags: Value(tags)));
-  }
-
-  @override
   Future<void> updateCustomVibe(
     String playlistId, {
     required List<Color> colors,

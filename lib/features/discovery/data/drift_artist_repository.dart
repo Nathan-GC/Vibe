@@ -3,6 +3,7 @@ import 'package:drift/drift.dart';
 import '../../../core/storage/database/app_database.dart';
 import '../domain/artist_filter.dart';
 import '../domain/artist_sort.dart';
+import '../domain/top_artist_playlist.dart';
 import 'artist_repository.dart';
 
 class DriftArtistRepository implements ArtistRepository {
@@ -60,5 +61,44 @@ class DriftArtistRepository implements ArtistRepository {
     final List<String> names = rows.map((row) => row.read(_db.trackArtists.artistName)!).toList();
     names.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     return names;
+  }
+
+  @override
+  Future<List<TopArtistPlaylist>> fetchTopArtistPlaylists({int limit = 7}) async {
+    final countExp = _db.trackArtists.trackId.count();
+    final query = _db.selectOnly(_db.trackArtists)
+      ..addColumns([_db.trackArtists.artistName, countExp])
+      ..groupBy([_db.trackArtists.artistName])
+      ..orderBy([OrderingTerm.desc(countExp)])
+      ..limit(limit);
+    final List<TypedResult> rows = await query.get();
+
+    final List<TopArtistPlaylist> playlists = [];
+    for (final row in rows) {
+      final String artistName = row.read(_db.trackArtists.artistName)!;
+      final int trackCount = row.read(countExp) ?? 0;
+      playlists.add(
+        TopArtistPlaylist(
+          artistName: artistName,
+          trackCount: trackCount,
+          coverArtPath: await _mostPlayedTrackCover(artistName),
+        ),
+      );
+    }
+    return playlists;
+  }
+
+  // Pochette du morceau le plus écouté (`playCount`) de [artistName] — `null`
+  // si aucun de ses morceaux n'a de pochette (jamais enrichi, jamais joué).
+  Future<String?> _mostPlayedTrackCover(String artistName) async {
+    final query = _db.select(_db.tracks).join([
+      innerJoin(_db.trackArtists, _db.trackArtists.trackId.equalsExp(_db.tracks.id)),
+    ])
+      ..where(_db.trackArtists.artistName.equals(artistName))
+      ..orderBy([OrderingTerm.desc(_db.tracks.playCount)])
+      ..limit(1);
+    final row = await query.getSingleOrNull();
+    final Track? track = row?.readTable(_db.tracks);
+    return (track != null && track.coverArtPath.isNotEmpty) ? track.coverArtPath : null;
   }
 }

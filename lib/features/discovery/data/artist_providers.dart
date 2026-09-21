@@ -7,6 +7,7 @@ import '../domain/album_group.dart';
 import '../domain/artist_filter.dart';
 import '../domain/artist_metadata.dart';
 import '../domain/artist_sort.dart';
+import '../domain/top_artist_playlist.dart';
 import 'artist_metadata_api.dart';
 import 'artist_repository.dart';
 import 'drift_artist_repository.dart';
@@ -49,4 +50,10 @@ final albumTracksProvider = FutureProvider.autoDispose.family<List<OnlineTrackRe
 /// garder cette liste en mémoire une fois la feuille de sélection fermée.
 final allLocalArtistNamesProvider = FutureProvider.autoDispose<List<String>>((ref) {
   return ref.watch(artistRepositoryProvider).fetchAllArtistNames();
+});
+
+/// Carrousel "Suggestions d'artistes" de Découverte (Section 5.2) — remplace
+/// l'ancien moteur basé sur les mots-clés (supprimé, voir Section 5.1).
+final topArtistPlaylistsProvider = FutureProvider.autoDispose<List<TopArtistPlaylist>>((ref) {
+  return ref.watch(artistRepositoryProvider).fetchTopArtistPlaylists();
 });

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,15 +12,16 @@ import '../../../core/shared/widgets/skeleton_loader.dart';
 import '../../../core/shared/widgets/track_actions_sheet.dart';
 import '../../../core/storage/database/app_database.dart';
 import '../../../core/theme/design_system/app_spacing.dart';
+import '../../../core/theme/design_system/vibe_design_system.dart';
 import '../../../core/theme/vibe_engine/active_vibe_provider.dart';
 import '../../../core/theme/vibe_engine/vibe_engine.dart';
 import '../../playlists/data/playlist_providers.dart';
+import '../data/artist_providers.dart';
 import '../data/autocomplete_providers.dart';
-import '../data/recommendation_providers.dart';
 import '../data/search_providers.dart';
 import '../domain/autocomplete_suggestion.dart';
 import '../domain/search_result.dart';
-import 'playlist_filter_sheet.dart';
+import '../domain/top_artist_playlist.dart';
 
 /// Délai de debounce avant d'interroger l'autocomplétion — évite une requête
 /// iTunes à chaque frappe.
@@ -28,9 +30,9 @@ const Duration _autocompleteDebounce = Duration(milliseconds: 300);
 /// Tab 1 : recherche unifiée (locale d'abord, repli API publique si aucun
 /// résultat local), autocomplétion dynamique pendant la frappe, ingestion de
 /// liens Spotify, imports JSON, et — quand la recherche est vide — le tableau
-/// de bord de suggestions (Étape 4) : artistes/titres recommandés localement
-/// à partir des mots-clés déjà en base, sans aucune incidence sur la Vibe
-/// (choix exclusivement manuel).
+/// de bord de suggestions : tes playlists, puis les 7 artistes les plus
+/// présents dans ta bibliothèque locale (Section 5.2, sans aucune incidence
+/// sur la Vibe, choix exclusivement manuel).
 class DiscoveryScreen extends ConsumerStatefulWidget {
   const DiscoveryScreen({super.key});
 
@@ -242,22 +244,18 @@ class _AutocompleteTile extends StatelessWidget {
       };
 }
 
-/// Tableau de bord affiché quand la recherche est vide (wireframe) :
-/// suggestions d'artistes (bibliothèque entière) et de titres (playlist
-/// cible), plus les deux filtres "Playlist" et "Local / Banque de données".
+/// Tableau de bord affiché quand la recherche est vide : tes playlists, puis
+/// les 7 artistes les plus présents dans ta bibliothèque locale (Section 5.2
+/// — le carrousel "Suggestions d'artistes" ne montre plus que ça, ni Mots-clés
+/// ni filtre "Playlist"/"Local / Banque de données", supprimés avec l'ancien
+/// moteur de recommandation, voir Section 5.1).
 class _SuggestionsPanel extends ConsumerWidget {
   const _SuggestionsPanel();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final AsyncValue<List<SearchResult>> artistSuggestions = ref.watch(artistSuggestionsProvider);
-    final AsyncValue<List<SearchResult>> trackSuggestions = ref.watch(trackSuggestionsProvider);
-    final String? selectedPlaylistId = ref.watch(suggestionPlaylistIdProvider);
-    final bool useOnlineSource = ref.watch(suggestionSourceProvider);
     final AsyncValue<List<Playlist>> playlists = ref.watch(playlistsProvider);
-
-    final AsyncValue<Playlist?> selectedPlaylist =
-        selectedPlaylistId == null ? const AsyncValue.data(null) : ref.watch(playlistByIdProvider(selectedPlaylistId));
+    final AsyncValue<List<TopArtistPlaylist>> topArtists = ref.watch(topArtistPlaylistsProvider);
 
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 16),
@@ -276,7 +274,7 @@ class _SuggestionsPanel extends ConsumerWidget {
                       ),
                       const SizedBox(height: AppSpacing.s),
                       SizedBox(
-                        height: 208,
+                        height: 220,
                         child: ListView.separated(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
                           scrollDirection: Axis.horizontal,
@@ -294,138 +292,98 @@ class _SuggestionsPanel extends ConsumerWidget {
                 ),
           orElse: () => const SizedBox.shrink(),
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: _SuggestionCard(
-            title: "Suggestion d'artistes",
-            subtitle: 'D\'après les mots-clés les plus récurrents de toute ta bibliothèque',
-            child: artistSuggestions.when(
-              data: (data) => data.isEmpty
-                  ? const Text(
-                      'Pas encore assez de mots-clés — enrichis ta bibliothèque depuis Mon espace > Bibliothèque.',
-                    )
-                  : SizedBox(
-                      height: 96,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: data.length,
-                        separatorBuilder: (context, index) => const SizedBox(width: AppSpacing.s),
-                        itemBuilder: (context, index) => _ArtistSuggestionCard(result: data[index]),
+        topArtists.when(
+          data: (data) => data.isEmpty
+              ? const SizedBox.shrink()
+              : Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16),
+                        child: Text("Suggestions d'artistes", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                       ),
-                    ),
-              loading: () => const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: LinearProgressIndicator()),
-              error: (error, _) => Text('Erreur : $error'),
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: _SuggestionCard(
-            title: 'Suggestion de titres',
-            subtitle: selectedPlaylist.value == null
-                ? 'Choisis une playlist cible avec le filtre "Playlist" ci-dessous'
-                : 'D\'après les mots-clés des morceaux de "${selectedPlaylist.value!.title}"',
-            child: selectedPlaylistId == null
-                ? const Text('Aucune playlist sélectionnée.')
-                : trackSuggestions.when(
-                    data: (data) => data.isEmpty
-                        ? const Text('Aucune suggestion pour cette playlist.')
-                        : Column(children: data.map((r) => _ResultTile(result: r)).toList()),
-                    loading: () =>
-                        const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: LinearProgressIndicator()),
-                    error: (error, _) => Text('Erreur : $error'),
+                      const SizedBox(height: AppSpacing.s),
+                      SizedBox(
+                        height: 220,
+                        child: ListView.separated(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          scrollDirection: Axis.horizontal,
+                          itemCount: data.length,
+                          separatorBuilder: (context, index) => const SizedBox(width: AppSpacing.m),
+                          itemBuilder: (context, index) => _TopArtistPlaylistCard(playlist: data[index]),
+                        ),
+                      ),
+                    ],
                   ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.queue_music),
-                  label: Text(
-                    selectedPlaylist.value?.title ?? 'Playlist',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  onPressed: () => PlaylistFilterSheet.show(context),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  icon: Icon(useOnlineSource ? Icons.cloud_outlined : Icons.smartphone_outlined),
-                  label: Text(useOnlineSource ? 'Banque de données' : 'Local'),
-                  onPressed: () => ref.read(suggestionSourceProvider.notifier).toggle(),
-                ),
-              ),
-            ],
+          loading: () => const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: LinearProgressIndicator(),
           ),
+          error: (error, _) => const SizedBox.shrink(),
         ),
       ],
     );
   }
 }
 
-/// Carte compacte d'un artiste suggéré (carrousel horizontal, Design System)
-/// — avatar circulaire + nom, tap direct vers la fiche artiste.
-class _ArtistSuggestionCard extends StatelessWidget {
-  const _ArtistSuggestionCard({required this.result});
+/// Carte d'une playlist auto-générée par artiste (Section 5.2) — même gabarit
+/// visuel que [PlaylistCard] (pochette carrée + titre + sous-titre), mais
+/// jamais construite à partir d'une vraie `Playlist` (voir [TopArtistPlaylist]) :
+/// le tap ouvre directement la fiche artiste (Section 5.3 — morceaux locaux +
+/// suggestions en ligne avec extraits 30s), qui fait déjà tout ce qu'une page
+/// de playlist Découverte doit montrer.
+class _TopArtistPlaylistCard extends StatelessWidget {
+  const _TopArtistPlaylistCard({required this.playlist});
 
-  final SearchResult result;
+  final TopArtistPlaylist playlist;
 
   @override
   Widget build(BuildContext context) {
-    final String name = switch (result) {
-      ArtistSearchResult(:final artistName) => artistName,
-      TrackSearchResult(:final track) => track.artists.isNotEmpty ? track.artists.first : track.title,
-      PlaylistSearchResult(:final playlist) => playlist.title,
-      OnlineTrackSearchResult(:final track) => track.artist,
-    };
-
+    final String? coverPath = playlist.coverArtPath;
     return SizedBox(
-      width: 76,
+      width: 152,
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () => context.push('/discovery/artist/$name'),
-        child: Column(
-          children: [
-            CircleAvatar(
-              radius: 32,
-              backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-              child: const Icon(Icons.person_outline),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SuggestionCard extends StatelessWidget {
-  const _SuggestionCard({required this.title, required this.subtitle, required this.child});
-
-  final String title;
-  final String subtitle;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
+        borderRadius: const BorderRadius.all(Radius.circular(AppRadii.card)),
+        onTap: () => context.push('/discovery/artist/${playlist.artistName}'),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
-            Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-            const SizedBox(height: 8),
-            child,
+            AspectRatio(
+              aspectRatio: 1,
+              child: ClipRRect(
+                borderRadius: const BorderRadius.all(Radius.circular(AppRadii.card)),
+                child: coverPath == null
+                    ? Container(
+                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                        child: const Icon(Icons.person_outline, size: 40),
+                      )
+                    : Image(
+                        image: coverPath.startsWith('http') ? NetworkImage(coverPath) : FileImage(File(coverPath)) as ImageProvider,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                          child: const Icon(Icons.person_outline, size: 40),
+                        ),
+                      ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.s),
+            Text(
+              playlist.artistName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '${playlist.trackCount} morceau${playlist.trackCount > 1 ? 'x' : ''}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           ],
         ),
       ),
