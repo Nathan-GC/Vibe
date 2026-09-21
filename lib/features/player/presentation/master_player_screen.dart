@@ -146,7 +146,19 @@ class _VibeBackgroundImageLayer extends StatelessWidget {
       fit: StackFit.expand,
       children: [
         Opacity(
-            opacity: 0.35, child: Image.file(File(path), fit: BoxFit.cover)),
+          opacity: 0.35,
+          // `errorBuilder` : même garde que PlaylistCoverImage/AlbumArtReactive
+          // — un chemin d'image de fond personnalisée supprimé/déplacé/corrompu
+          // hors de l'app ne doit pas casser tout l'écran (bug réel reproduit :
+          // `Image.file` sans errorBuilder fait planter le rendu du Viewport
+          // parent avec "RenderViewport expected a child of type RenderSliver
+          // but received a child of type RenderErrorBox").
+          child: Image.file(
+            File(path),
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+          ),
+        ),
         child,
       ],
     );

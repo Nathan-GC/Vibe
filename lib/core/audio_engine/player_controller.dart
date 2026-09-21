@@ -172,9 +172,9 @@ class PlayerController extends _$PlayerController {
     state = state.copyWith(repeatMode: mode);
   }
 
-  Future<void> playTrackAt(int index, {String? playlistId}) async {
+  Future<void> playTrackAt(int startIndex, {String? playlistId}) async {
     final List<Track> tracks = await ref.read(queueTracksProvider.future);
-    if (index < 0 || index >= tracks.length) return;
+    if (startIndex < 0 || startIndex >= tracks.length) return;
 
     // Jeton de génération : entre les deux `await` ci-dessous, un autre appel
     // (tap rapide sur "suivant", changement de playlist, complétion naturelle
@@ -186,41 +186,59 @@ class PlayerController extends _$PlayerController {
     // ancienne playlist après un changement rapide.
     final int token = ++_loadToken;
 
-    final Track track = tracks[index];
-    final int endMs = track.durationSeconds * 1000 - track.trimEndMs;
+    // Boucle (et non un simple appel unique) : un fichier référencé en base
+    // peut avoir été supprimé/déplacé/corrompu hors de l'app (nettoyage
+    // manuel du stockage, éjection de carte SD...). `setAudioSource` lève
+    // alors une exception (`PlatformException`/`ExoPlaybackException`) —
+    // bug réel reproduit : laissée non interceptée, elle remontait en
+    // "Unhandled Exception" et figeait silencieusement le lecteur sur ce
+    // morceau, sans jamais avancer. On tente donc chaque morceau suivant de
+    // la Queue jusqu'au premier qui charge, plutôt que de s'arrêter net.
+    for (int index = startIndex; index < tracks.length; index++) {
+      final Track track = tracks[index];
+      final int endMs = track.durationSeconds * 1000 - track.trimEndMs;
 
-    await _player.setAudioSource(
-      ClippingAudioSource(
-        child: AudioSource.uri(Uri.file(track.filePath)),
-        start: Duration(milliseconds: track.trimStartMs),
-        end: track.trimEndMs > 0 ? Duration(milliseconds: endMs) : null,
-      ),
-    );
+      try {
+        await _player.setAudioSource(
+          ClippingAudioSource(
+            child: AudioSource.uri(Uri.file(track.filePath)),
+            start: Duration(milliseconds: track.trimStartMs),
+            end: track.trimEndMs > 0 ? Duration(milliseconds: endMs) : null,
+          ),
+        );
+      } catch (_) {
+        continue;
+      }
 
-    if (token != _loadToken) return;
+      if (token != _loadToken) return;
 
-    _currentIndex = index;
-    // `copyWith` plutôt qu'un nouveau `PlayerSnapshot(...)` : préserve
-    // `repeatMode` d'un changement de piste à l'autre (suivant/précédent,
-    // auto-avance...) — sans quoi le mode Aléatoire/Répétition reviendrait
-    // silencieusement à "ordre de la playlist" à chaque piste.
-    //
-    // `currentTrack` posé ICI, avant `_player.play()` plutôt qu'après sa
-    // résolution : au tout premier appel natif suivant un cold start (warm-up
-    // du plugin/service audio), la Future de `play()` peut mettre plusieurs
-    // dizaines de secondes à se résoudre côté Dart alors que la lecture
-    // native a déjà démarré. Tant que `currentTrack` restait null, le Lecteur
-    // (titre, pochette, icône Play/Pause, fond Vibe) restait figé sur
-    // "Aucune lecture" tout ce temps — le listener de `playerStateStream`
-    // ci-dessus se tait lui aussi tant que `currentTrack == null` — jusqu'à
-    // ce qu'un tap manuel force une resynchronisation. Bug réel observé lors
-    // d'un retest QA (Vibe Neon "sans effet" au premier lancement d'une
-    // playlist après ouverture de l'app).
-    state = state.copyWith(status: PlaybackStatus.playing, currentTrack: track, currentPlaylistId: playlistId);
-    unawaited(_player.play());
+      _currentIndex = index;
+      // `copyWith` plutôt qu'un nouveau `PlayerSnapshot(...)` : préserve
+      // `repeatMode` d'un changement de piste à l'autre (suivant/précédent,
+      // auto-avance...) — sans quoi le mode Aléatoire/Répétition reviendrait
+      // silencieusement à "ordre de la playlist" à chaque piste.
+      //
+      // `currentTrack` posé ICI, avant `_player.play()` plutôt qu'après sa
+      // résolution : au tout premier appel natif suivant un cold start (warm-up
+      // du plugin/service audio), la Future de `play()` peut mettre plusieurs
+      // dizaines de secondes à se résoudre côté Dart alors que la lecture
+      // native a déjà démarré. Tant que `currentTrack` restait null, le Lecteur
+      // (titre, pochette, icône Play/Pause, fond Vibe) restait figé sur
+      // "Aucune lecture" tout ce temps — le listener de `playerStateStream`
+      // ci-dessus se tait lui aussi tant que `currentTrack == null` — jusqu'à
+      // ce qu'un tap manuel force une resynchronisation. Bug réel observé lors
+      // d'un retest QA (Vibe Neon "sans effet" au premier lancement d'une
+      // playlist après ouverture de l'app).
+      state = state.copyWith(status: PlaybackStatus.playing, currentTrack: track, currentPlaylistId: playlistId);
+      unawaited(_player.play());
 
-    unawaited(_storage.save(queueTrackIds: tracks.map((t) => t.id).toList(), currentIndex: index));
-    unawaited(ref.read(trackRepositoryProvider).recordPlay(track.id));
+      unawaited(_storage.save(queueTrackIds: tracks.map((t) => t.id).toList(), currentIndex: index));
+      unawaited(ref.read(trackRepositoryProvider).recordPlay(track.id));
+      return;
+    }
+
+    // Plus aucun morceau lisible à partir de `startIndex` : rien à jouer.
+    if (token == _loadToken) state = state.copyWith(status: PlaybackStatus.idle);
   }
 
   /// Séparés de [togglePlayPause] pour la notification média (Étape 5) :
@@ -288,12 +306,20 @@ class PlayerController extends _$PlayerController {
     final int index = persisted.currentIndex.clamp(0, tracks.length - 1);
     final Track track = tracks[index];
 
-    await _player.setAudioSource(
-      ClippingAudioSource(
-        child: AudioSource.uri(Uri.file(track.filePath)),
-        start: Duration(milliseconds: track.trimStartMs),
-      ),
-    );
+    try {
+      await _player.setAudioSource(
+        ClippingAudioSource(
+          child: AudioSource.uri(Uri.file(track.filePath)),
+          start: Duration(milliseconds: track.trimStartMs),
+        ),
+      );
+    } catch (_) {
+      // Fichier de la dernière session introuvable (supprimé/déplacé hors de
+      // l'app entre deux lancements) : rien à restaurer plutôt que de faire
+      // planter le démarrage — l'utilisateur relance une lecture normalement,
+      // `state` reste `idle` (valeur par défaut de [build]).
+      return;
+    }
     // Chargé en pause au début du morceau — pas de lecture automatique au lancement.
     // `ref.mounted` : ce provider peut avoir été disposé pendant les `await`
     // ci-dessus si l'app a déjà navigué ailleurs (ex. redirection vers
