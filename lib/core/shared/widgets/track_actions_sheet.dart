@@ -121,7 +121,24 @@ class TrackActionsSheet extends ConsumerWidget {
     if (ref.read(previewPlayerControllerProvider) == track.filePath) {
       await ref.read(previewPlayerControllerProvider.notifier).stop();
     }
-    await ref.read(orphanPurgeServiceProvider).deleteTracks([track]);
+
+    try {
+      await ref.read(orphanPurgeServiceProvider).deleteTracks([track]);
+    } catch (_) {
+      // Un morceau indexé par le scan plein-appareil (jamais copié dans le
+      // dossier privé de l'app, contrairement à un import manuel) peut être
+      // protégé par le stockage cloisonné d'Android : l'app peut le lire
+      // mais pas le supprimer directement — vérifié empiriquement (le fichier
+      // reste intact). Feedback explicite plutôt que de laisser la feuille
+      // bloquée sans aucun retour.
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Suppression impossible : fichier protégé par le système.')),
+        );
+      }
+      return;
+    }
+
     if (context.mounted) Navigator.of(context).pop();
     onChanged?.call();
   }

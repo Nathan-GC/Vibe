@@ -55,11 +55,16 @@ class YoutubeEnricherService {
   // meilleure résolution réellement disponible plutôt que de renvoyer une URL
   // qui n'existe pas.
   String? _bestThumbnail(ThumbnailSet thumbnails) {
+    // `lowResUrl` en dernier repli : vérifié empiriquement, les résultats de
+    // recherche (contrairement à une fiche vidéo complète) ne renseignent
+    // parfois que celui-ci — sans lui, un morceau pourtant trouvé restait
+    // sans pochette alors qu'une miniature existait bel et bien.
     for (final String url in [
       thumbnails.maxResUrl,
       thumbnails.standardResUrl,
       thumbnails.highResUrl,
       thumbnails.mediumResUrl,
+      thumbnails.lowResUrl,
     ]) {
       if (url.isNotEmpty) return url;
     }

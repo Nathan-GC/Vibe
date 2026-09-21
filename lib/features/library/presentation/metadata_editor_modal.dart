@@ -242,27 +242,26 @@ class _MetadataEditorModalState extends ConsumerState<MetadataEditorModal> {
                 ],
               ),
               const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Recherche en ligne', style: Theme.of(context).textTheme.labelLarge),
-                  SegmentedButton<EnrichmentSource>(
-                    segments: const [
-                      ButtonSegment(value: EnrichmentSource.itunes, label: Text('iTunes'), icon: Icon(Icons.apple, size: 16)),
-                      ButtonSegment(
-                        value: EnrichmentSource.youtube,
-                        label: Text('YouTube'),
-                        icon: Icon(Icons.smart_display_outlined, size: 16),
-                      ),
-                    ],
-                    selected: {_searchSource},
-                    showSelectedIcon: false,
-                    onSelectionChanged: (selection) {
-                      setState(() => _searchSource = selection.first);
-                      _performSearch();
-                    },
-                  ),
-                ],
+              Text('Recherche en ligne', style: Theme.of(context).textTheme.labelLarge),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: SegmentedButton<EnrichmentSource>(
+                  segments: const [
+                    ButtonSegment(value: EnrichmentSource.itunes, label: Text('iTunes'), icon: Icon(Icons.apple, size: 16)),
+                    ButtonSegment(
+                      value: EnrichmentSource.youtube,
+                      label: Text('YouTube'),
+                      icon: Icon(Icons.smart_display_outlined, size: 16),
+                    ),
+                  ],
+                  selected: {_searchSource},
+                  showSelectedIcon: false,
+                  onSelectionChanged: (selection) {
+                    setState(() => _searchSource = selection.first);
+                    _performSearch();
+                  },
+                ),
               ),
               const SizedBox(height: 4),
               Row(
