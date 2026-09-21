@@ -4,11 +4,11 @@ import 'package:permission_handler/permission_handler.dart';
 import '../../../core/shared/onboarding_storage.dart';
 import '../../../core/shared/permission_retry.dart';
 import '../../../core/storage/database/database_provider.dart';
-import '../../../core/storage/database/track_enricher.dart';
+import '../../../core/storage/database/track_auto_enricher.dart';
 import '../../../core/storage/database/track_repository.dart';
 import '../../../core/storage/scanner/full_device_scan_service.dart';
 import '../../../core/storage/scanner/scanned_track.dart';
-import '../../library/data/library_providers.dart' show trackAutoEnricherProvider, youtubeAutoEnricherProvider;
+import '../../library/data/library_providers.dart' show trackAutoEnricherProvider;
 
 final Provider<FullDeviceScanService> fullDeviceScanServiceProvider = Provider<FullDeviceScanService>((ref) {
   return FullDeviceScanService();
@@ -75,13 +75,15 @@ class OnboardingScanController extends Notifier<OnboardingScanState> {
 
   /// Demande la permission audio, lance le scan plein-appareil (isolates
   /// séparés pour le hachage — voir FullDeviceScanService), persiste chaque
-  /// morceau trouvé (phase 1 : renommage/import), puis enrichit via [source]
-  /// (Section 2.1 — choisi par OnboardingScreen avant l'appel, voir
-  /// showEnrichmentSourceDialog) les seuls morceaux renommés depuis leur nom
-  /// de fichier (phase 2, jamais entrelacée avec la phase 1 — tout le
-  /// renommage est déjà en base avant qu'un seul appel réseau d'enrichissement
-  /// ne parte), avant de marquer l'onboarding comme terminé.
-  Future<void> start({EnrichmentSource source = EnrichmentSource.itunes}) async {
+  /// morceau trouvé (phase 1 : renommage/import — un seul passage par
+  /// fichier, [FullDeviceScanService]/[LibraryScanService] ne bouclent ni ne
+  /// retentent), puis enrichit via iTunes exclusivement (voir "Recadrage du
+  /// Workflow d'Enrichissement" — jamais de choix de source ni de question
+  /// posée au premier scan) les seuls morceaux renommés depuis leur nom de
+  /// fichier (phase 2, jamais entrelacée avec la phase 1 — tout le renommage
+  /// est déjà en base avant qu'un seul appel réseau d'enrichissement ne
+  /// parte), avant de marquer l'onboarding comme terminé.
+  Future<void> start() async {
     await requestPermissionWithRetry(Permission.audio);
     final PermissionStatus status = await Permission.audio.status;
     if (!status.isGranted) {
@@ -111,21 +113,23 @@ class OnboardingScanController extends Notifier<OnboardingScanState> {
 
     final List<ScannedTrack> renamedTracks = tracks.where((t) => t.wasRenamedFromFilename).toList();
     if (renamedTracks.isNotEmpty) {
-      final TrackEnricher enricher = switch (source) {
-        EnrichmentSource.itunes => ref.read(trackAutoEnricherProvider),
-        EnrichmentSource.youtube => ref.read(youtubeAutoEnricherProvider),
-      };
+      final TrackAutoEnricher enricher = ref.read(trackAutoEnricherProvider);
       state = state.copyWith(isEnriching: true, enrichmentProcessed: 0, enrichmentTotal: renamedTracks.length);
       for (int i = 0; i < renamedTracks.length; i++) {
+        // Passe unique et stricte (voir TrackAutoEnricher.enrichTrack) :
+        // exactement une requête iTunes par morceau, jamais de nouvelle
+        // tentative sur le même fichier en cas d'échec/403/non-trouvé — sans
+        // quoi un blocage de débit iTunes en tout début de scan gèlerait
+        // l'écran d'onboarding le temps des reprises internes (jusqu'à
+        // plusieurs minutes chacune, voir MetadataApiClient) au lieu de
+        // passer directement au morceau suivant.
         await enricher.enrichTrack(
           trackId: renamedTracks[i].id,
           title: renamedTracks[i].title,
           artists: renamedTracks[i].artists,
+          singleAttempt: true,
         );
         state = state.copyWith(enrichmentProcessed: i + 1);
-        // Même throttle que LibraryScreen : rester raisonnable vis-à-vis de
-        // l'API publique iTunes (pas de clé, pas de garantie de quota).
-        await Future.delayed(const Duration(milliseconds: 200));
       }
     }
 

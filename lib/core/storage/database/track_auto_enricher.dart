@@ -54,8 +54,21 @@ class TrackAutoEnricher implements TrackEnricher {
   /// tentative primaire, qui elle ne touche jamais Titre/Artiste. Dans le pire
   /// cas où l'ordre inversé ne trouve rien de fiable non plus, rien n'est
   /// appliqué.
+  ///
+  /// `singleAttempt` (utilisé par `OnboardingScanController.start`, scan
+  /// initial) : impose exactement une requête réseau, sans la reprise
+  /// inversée Titre/Artiste ci-dessus ni les reprises internes de
+  /// [MetadataApiClient] sur échec/403 — un fichier non trouvé ou en échec
+  /// est immédiatement marqué `pending` ("À enrichir") plutôt que de faire
+  /// attendre l'écran d'onboarding le temps d'une reprise (jusqu'à plusieurs
+  /// minutes en cas de blocage de débit iTunes).
   @override
-  Future<bool> enrichTrack({required String trackId, required String title, required List<String> artists}) async {
+  Future<bool> enrichTrack({
+    required String trackId,
+    required String title,
+    required List<String> artists,
+    bool singleAttempt = false,
+  }) async {
     // Circuit-breaker (voir TrackRepository.shouldAttemptEnrichment) : un
     // morceau `failedPermanently` (tentatives épuisées) ou `requiresReview`
     // (nom de fichier trop ambigu) ne doit plus jamais déclencher de requête
@@ -66,12 +79,23 @@ class TrackAutoEnricher implements TrackEnricher {
 
     OnlineTrackResult? primaryMatch;
     try {
-      primaryMatch = await _search(localTitle: title, localArtists: artists, queryArtist: artist, queryTitle: title);
+      primaryMatch = await _search(
+        localTitle: title,
+        localArtists: artists,
+        queryArtist: artist,
+        queryTitle: title,
+        retryOnFailure: !singleAttempt,
+      );
     } catch (_) {
-      // Erreur réseau/API (déjà retentée en interne par MetadataApiClient) :
-      // ne compte pas comme une tentative épuisée, sans quoi un simple blocage
-      // temporaire iTunes (403) finirait par bannir des morceaux parfaitement
-      // enrichissables une fois la limitation levée.
+      // Erreur réseau/API : en mode normal, déjà retentée en interne par
+      // MetadataApiClient, donc ne compte pas comme une tentative épuisée,
+      // sans quoi un simple blocage temporaire iTunes (403) finirait par
+      // bannir des morceaux parfaitement enrichissables une fois la
+      // limitation levée. En [singleAttempt] (scan initial), aucune reprise
+      // interne n'a eu lieu : l'échec est définitif pour ce passage, donc
+      // consigné comme tel pour que le morceau reste visible dans "À
+      // enrichir" plutôt que de rester dans un flou non comptabilisé.
+      if (singleAttempt) await _trackRepository.recordEnrichmentOutcome(trackId, success: false);
       return false;
     }
     if (primaryMatch != null) {
@@ -81,7 +105,7 @@ class TrackAutoEnricher implements TrackEnricher {
     }
 
     final bool hasBothFields = artist.isNotEmpty && artist != 'Unknown' && title.isNotEmpty;
-    if (!hasBothFields) {
+    if (singleAttempt || !hasBothFields) {
       await _trackRepository.recordEnrichmentOutcome(trackId, success: false);
       return false;
     }
@@ -107,6 +131,7 @@ class TrackAutoEnricher implements TrackEnricher {
     required List<String> localArtists,
     required String queryArtist,
     required String queryTitle,
+    bool retryOnFailure = true,
   }) async {
     final String query = [
       if (queryArtist.isNotEmpty && queryArtist != 'Unknown') queryArtist,
@@ -114,7 +139,11 @@ class TrackAutoEnricher implements TrackEnricher {
     ].join(' ').trim();
     if (query.isEmpty) return null;
 
-    final List<OnlineTrackResult> results = await _metadataApiClient.search(query, limit: candidateLimit);
+    final List<OnlineTrackResult> results = await _metadataApiClient.search(
+      query,
+      limit: candidateLimit,
+      retryOnFailure: retryOnFailure,
+    );
     return TrackMatchConfidence.pickBestMatch(localTitle: localTitle, localArtists: localArtists, candidates: results);
   }
 

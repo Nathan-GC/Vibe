@@ -14,7 +14,12 @@ class _FakeMetadataApiClient extends MetadataApiClient {
   int callCount = 0;
 
   @override
-  Future<List<OnlineTrackResult>> search(String query, {int limit = 15, CancelToken? cancelToken}) async {
+  Future<List<OnlineTrackResult>> search(
+    String query, {
+    int limit = 15,
+    CancelToken? cancelToken,
+    bool retryOnFailure = true,
+  }) async {
     callCount++;
     return results;
   }
@@ -22,7 +27,12 @@ class _FakeMetadataApiClient extends MetadataApiClient {
 
 class _ThrowingMetadataApiClient extends MetadataApiClient {
   @override
-  Future<List<OnlineTrackResult>> search(String query, {int limit = 15, CancelToken? cancelToken}) async {
+  Future<List<OnlineTrackResult>> search(
+    String query, {
+    int limit = 15,
+    CancelToken? cancelToken,
+    bool retryOnFailure = true,
+  }) async {
     throw DioException(requestOptions: RequestOptions(path: ''), type: DioExceptionType.connectionError);
   }
 }
@@ -193,6 +203,66 @@ void main() {
       final track = await repository.findById('t1');
       expect(track!.enrichmentStatus, EnrichmentStatus.pending);
       expect(track.enrichmentAttempts, 0);
+    });
+  });
+
+  group('singleAttempt (scan initial, une seule passe sans boucle)', () {
+    test('makes exactly one search call and never the swapped-order fallback when nothing is found', () async {
+      await insertTrack(id: 't1', title: 'Feel Good', artists: ['Charlotte Cardin']);
+      final client = _FakeMetadataApiClient(const []);
+      final enricher = TrackAutoEnricher(metadataApiClient: client, trackRepository: repository);
+
+      final bool ok = await enricher.enrichTrack(
+        trackId: 't1',
+        title: 'Feel Good',
+        artists: ['Charlotte Cardin'],
+        singleAttempt: true,
+      );
+
+      expect(ok, isFalse);
+      expect(client.callCount, 1); // jamais la 2e requête (ordre inversé) du mode normal.
+      final track = await repository.findById('t1');
+      expect(track!.enrichmentStatus, EnrichmentStatus.pending); // "À enrichir", immédiatement.
+      expect(track.enrichmentAttempts, 1);
+    });
+
+    test('marks the track pending ("À enrichir") on a network failure instead of leaving it unrecorded', () async {
+      await insertTrack(id: 't1', title: 'One More Time', artists: ['Daft Punk']);
+      final enricher = TrackAutoEnricher(metadataApiClient: _ThrowingMetadataApiClient(), trackRepository: repository);
+
+      final bool ok = await enricher.enrichTrack(
+        trackId: 't1',
+        title: 'One More Time',
+        artists: ['Daft Punk'],
+        singleAttempt: true,
+      );
+
+      expect(ok, isFalse);
+      final track = await repository.findById('t1');
+      expect(track!.enrichmentStatus, EnrichmentStatus.pending);
+      expect(track.enrichmentAttempts, 1);
+    });
+
+    test('still enriches normally when the single attempt succeeds', () async {
+      await insertTrack(id: 't1', title: 'One More Time', artists: ['Daft Punk']);
+      final enricher = TrackAutoEnricher(
+        metadataApiClient: _FakeMetadataApiClient([
+          const OnlineTrackResult(artist: 'Daft Punk', title: 'One More Time', album: 'Discovery'),
+        ]),
+        trackRepository: repository,
+      );
+
+      final bool ok = await enricher.enrichTrack(
+        trackId: 't1',
+        title: 'One More Time',
+        artists: ['Daft Punk'],
+        singleAttempt: true,
+      );
+
+      expect(ok, isTrue);
+      final track = await repository.findById('t1');
+      expect(track!.enrichmentStatus, EnrichmentStatus.success);
+      expect(track.album, 'Discovery');
     });
   });
 }

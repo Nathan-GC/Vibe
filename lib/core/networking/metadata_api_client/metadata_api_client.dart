@@ -64,13 +64,26 @@ class MetadataApiClient {
   /// `cancelToken` : annule la requête HTTP précédente encore en vol quand
   /// l'utilisateur retape avant qu'elle n'ait répondu (autocomplétion —
   /// évite d'afficher une réponse obsolète après une réponse plus récente).
-  Future<List<OnlineTrackResult>> search(String query, {int limit = 15, CancelToken? cancelToken}) async {
+  ///
+  /// `retryOnFailure` (défaut `true`) : passé à `false` par l'enrichissement
+  /// automatique du premier scan (voir `OnboardingScanController.start` /
+  /// `TrackAutoEnricher.enrichTrack(singleAttempt: true)`), qui exige
+  /// exactement une requête par morceau — sans quoi un blocage de débit
+  /// iTunes en tout début de scan geler l'écran d'onboarding le temps des
+  /// reprises internes ci-dessous (jusqu'à plusieurs minutes chacune).
+  Future<List<OnlineTrackResult>> search(
+    String query, {
+    int limit = 15,
+    CancelToken? cancelToken,
+    bool retryOnFailure = true,
+  }) async {
     if (query.trim().isEmpty) return const [];
 
     final Response<String> response = await _getWithRetry(
       'https://itunes.apple.com/search',
       queryParameters: {'term': query, 'entity': 'song', 'limit': limit},
       cancelToken: cancelToken,
+      retryOnFailure: retryOnFailure,
     );
 
     final Map<String, dynamic> body = jsonDecode(response.data ?? '{}') as Map<String, dynamic>;
@@ -194,10 +207,16 @@ class MetadataApiClient {
   /// que Dio ne reconnaît pas comme JSON et laisse donc en String brute
   /// plutôt que de la parser en Map — d'où `get<String>` puis `jsonDecode`
   /// explicite chez chaque appelant.
+  ///
+  /// `retryOnFailure: false` court-circuite toute la logique de reprise
+  /// ci-dessous : la toute première erreur (transitoire ou blocage de débit)
+  /// est immédiatement relancée à l'appelant plutôt que d'attendre un délai
+  /// de reprise — voir [search].
   Future<Response<String>> _getWithRetry(
     String path, {
     required Map<String, dynamic> queryParameters,
     CancelToken? cancelToken,
+    bool retryOnFailure = true,
   }) async {
     int genericAttempt = 0;
     int rateLimitAttempt = 0;
@@ -207,7 +226,7 @@ class MetadataApiClient {
       try {
         return await _dio.get<String>(path, queryParameters: queryParameters, cancelToken: cancelToken);
       } on DioException catch (e) {
-        if (e.type == DioExceptionType.cancel) rethrow;
+        if (e.type == DioExceptionType.cancel || !retryOnFailure) rethrow;
 
         if (_isRateLimited(e)) {
           if (rateLimitAttempt >= _rateLimitRetryDelays.length) rethrow;

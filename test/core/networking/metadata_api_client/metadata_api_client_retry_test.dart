@@ -108,4 +108,26 @@ void main() {
     await expectLater(client.search('some query'), throwsA(isA<DioException>()));
     expect(adapter.callCount, 1); // aucune reprise sur une vraie erreur de requête.
   });
+
+  test('retryOnFailure: false gives up immediately on a transient error (scan initial)', () async {
+    final adapter = _ScriptedAdapter(failTimes: 100);
+    final dio = Dio()..httpClientAdapter = adapter;
+    final client = MetadataApiClient(dio: dio);
+
+    await expectLater(client.search('some query', retryOnFailure: false), throwsA(isA<DioException>()));
+    expect(adapter.callCount, 1); // une seule requête, aucune des 3 reprises normales.
+  });
+
+  test('retryOnFailure: false gives up immediately on an iTunes rate-limit block (scan initial)', () async {
+    final adapter = _ScriptedAdapter(
+      failTimes: 100,
+      failureType: DioExceptionType.badResponse,
+      failureStatusCode: 403,
+    );
+    final dio = Dio()..httpClientAdapter = adapter;
+    final client = MetadataApiClient(dio: dio);
+
+    await expectLater(client.search('some query', retryOnFailure: false), throwsA(isA<DioException>()));
+    expect(adapter.callCount, 1); // pas d'attente de plusieurs minutes sur le blocage 403.
+  });
 }
