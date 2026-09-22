@@ -17,6 +17,13 @@ uniform float uStyle;       // 0=cyberpunk 1=synthwave 2=nature 3=étoiles
 uniform vec2 uBackdropSize;   // largeur/hauteur natives de la photo
 uniform float uBackdropReady; // 1.0 une fois la texture réellement chargée
 uniform sampler2D uBackdrop;
+// Retro (styleIndex 1) uniquement — 1.0 quand la pochette est masquée
+// (`VibeVisual.showCoverImage`, voir VibeCustomizerScreen) : le bloc Titre/
+// Artiste remonte alors dans la Column du Player (voir MasterPlayerScreen),
+// vers la zone où le soleil se dessinait par défaut — repoussé plus haut/
+// réduit dans ce cas précis pour ne jamais chevaucher le texte, plutôt que
+// de dégrader sa taille/position habituelle quand la pochette reste visible.
+uniform float uCoverHidden;
 
 out vec4 fragColor;
 
@@ -220,16 +227,17 @@ void main() {
     if (uv.y < horizonY) {
       // Soleil couchant strié : dégradé jaune -> rose, tranché par des
       // bandes horizontales qui s'élargissent vers le bas (effet "vinyle
-      // découpé"), classique de l'iconographie synthwave. Repoussé plus haut
-      // et légèrement réduit (QA — Section 2.A) : à son ancienne position
-      // (centre à 42% de hauteur, rayon 0.20 -> jusqu'à ~62% de hauteur), le
-      // disque touchait la ligne d'horizon ET la zone centrale de l'écran où
-      // s'affichent Titre/Artiste — collision particulièrement visible quand
-      // la pochette est masquée (`showCoverImage`, Section 3), le contenu
-      // restant remontant alors vers le centre de l'écran. Reste bien dans
-      // une zone "ciel" dédiée au-dessus de la grille, sans toucher l'horizon.
-      vec2 sunCenter = vec2(0.5 * aspect, horizonY - 0.34);
-      float sunRadius = 0.15;
+      // découpé"), classique de l'iconographie synthwave. Position/rayon de
+      // base déjà remontés une première fois (QA — Section 2.A, centre à 42%
+      // -> 28% de hauteur) pour rester dans une zone "ciel" au-dessus de la
+      // grille. Toujours pas suffisant quand la pochette est masquée
+      // (`uCoverHidden`, retest QA) : le bloc Titre/Artiste remonte alors
+      // encore plus haut dans la Column du Player — repoussé une seconde
+      // fois et réduit spécifiquement dans ce cas (centre à 16%, rayon 0.12)
+      // pour ne plus jamais le chevaucher, plutôt que de dégrader la taille
+      // habituelle du soleil quand la pochette reste affichée.
+      vec2 sunCenter = vec2(0.5 * aspect, horizonY - (uCoverHidden > 0.5 ? 0.46 : 0.34));
+      float sunRadius = uCoverHidden > 0.5 ? 0.12 : 0.15;
       float distToSun = distance(auv, sunCenter);
       float sunMask = smoothstep(sunRadius, sunRadius - 0.008, distToSun);
 

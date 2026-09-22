@@ -236,6 +236,7 @@ class _FluidBackgroundState extends State<FluidBackground> with SingleTickerProv
             // (comportement historique) pour tous les autres presets.
             effect: widget.vibe.effect,
             isSpaceNebula: isSpaceNebula,
+            coverHidden: !widget.vibe.showCoverImage,
             backdropImage: _backdropImage,
             dummySamplerImage: _dummySamplerImage,
           ),
@@ -290,6 +291,7 @@ class _FluidPainter extends CustomPainter {
     required this.paintGradientBlobs,
     required this.effect,
     required this.isSpaceNebula,
+    required this.coverHidden,
     required this.backdropImage,
     required this.dummySamplerImage,
   });
@@ -313,6 +315,11 @@ class _FluidPainter extends CustomPainter {
   // jamais superposée à un [_paintFluidBlobs] par ailleurs invisible (noir
   // sur noir).
   final bool isSpaceNebula;
+  // Retro (styleIndex 1) uniquement — voir uCoverHidden dans
+  // vibe_particles.frag : pochette masquée (Section 3) = soleil repoussé
+  // plus haut/réduit pour ne jamais chevaucher le bloc Titre/Artiste
+  // remonté dans la Column du Player (retest QA, "Polish & Final UI Fixes").
+  final bool coverHidden;
   // Vibe Neon (styleIndex 0) uniquement : texture échantillonnée par le
   // shader lui-même pour la réfraction des gouttes et la détection des
   // zones néon (uBackdrop) — voir vibe_particles.frag. `dummySamplerImage`
@@ -358,6 +365,7 @@ class _FluidPainter extends CustomPainter {
         ..setFloat(8, backdrop.width.toDouble())
         ..setFloat(9, backdrop.height.toDouble())
         ..setFloat(10, backdropImage != null ? 1.0 : 0.0)
+        ..setFloat(11, coverHidden ? 1.0 : 0.0)
         ..setImageSampler(0, sampler);
       canvas.drawRect(Offset.zero & size, Paint()..shader = activeShader);
     }
@@ -489,6 +497,7 @@ class _FluidPainter extends CustomPainter {
         oldDelegate.paintGradientBlobs != paintGradientBlobs ||
         oldDelegate.effect != effect ||
         oldDelegate.isSpaceNebula != isSpaceNebula ||
+        oldDelegate.coverHidden != coverHidden ||
         oldDelegate.backdropImage != backdropImage ||
         oldDelegate.dummySamplerImage != dummySamplerImage;
   }
