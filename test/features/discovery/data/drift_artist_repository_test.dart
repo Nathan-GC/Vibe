@@ -91,4 +91,36 @@ void main() {
 
     expect(top.single.coverArtPath, isNull);
   });
+
+  group('fetchAllArtistNames (QA Section 3.A — case-insensitive dedup)', () {
+    test('collapses case variants of the same artist into a single canonical entry', () async {
+      await addTrack(id: 't1', artists: ['ABBA']);
+      await addTrack(id: 't2', artists: ['Abba']);
+
+      final List<String> names = await artistRepository.fetchAllArtistNames();
+
+      expect(names, ['Abba']);
+    });
+
+    test('keeps genuinely distinct artists separate', () async {
+      await addTrack(id: 't1', artists: ['Daft Punk']);
+      await addTrack(id: 't2', artists: ['Justice']);
+
+      final List<String> names = await artistRepository.fetchAllArtistNames();
+
+      expect(names, ['Daft Punk', 'Justice']);
+    });
+  });
+
+  group('watchArtistTracks (QA Section 3.A — comparaison insensible à la casse)', () {
+    test('finds tracks regardless of the stored casing, matching the canonical name from fetchAllArtistNames', () async {
+      await addTrack(id: 't1', artists: ['ABBA']);
+      await addTrack(id: 't2', artists: ['Abba']);
+      final String canonical = (await artistRepository.fetchAllArtistNames()).single;
+
+      final List<Track> tracks = await artistRepository.watchArtistTracks(canonical).first;
+
+      expect(tracks.map((t) => t.id).toSet(), {'t1', 't2'});
+    });
+  });
 }

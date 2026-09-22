@@ -421,7 +421,7 @@ class TrackRepository {
     final Map<String, Set<String>> variantsByNormalized = {};
     for (final track in allTracks) {
       for (final name in track.artists) {
-        variantsByNormalized.putIfAbsent(_normalizeForGrouping(name), () => {}).add(name);
+        variantsByNormalized.putIfAbsent(ArtistNameNormalizer.normalizeForGrouping(name), () => {}).add(name);
       }
     }
 
@@ -429,7 +429,7 @@ class TrackRepository {
     int mergedGroups = 0;
     for (final entry in variantsByNormalized.entries) {
       if (entry.value.length < 2) continue; // pas de doublon casse/espacement pour cet artiste
-      final String canonical = _pickCanonical(entry.value);
+      final String canonical = ArtistNameNormalizer.pickCanonical(entry.value);
       mergedGroups++;
       for (final variant in entry.value) {
         canonicalByVariant[variant] = canonical;
@@ -510,42 +510,4 @@ class TrackRepository {
     });
   }
 
-  /// Clé de regroupement insensible à la casse et à toute ponctuation/espace
-  /// (ex. "Daft Punk", "DAFT-PUNK" et "DaftPunk" partagent la même clé
-  /// "daftpunk"). Risque accepté : deux artistes réellement différents dont
-  /// le nom ne diffère que par une ponctuation sémantique (ex. "will.i.am"
-  /// vs un hypothétique artiste "William") seraient à tort regroupés — cas
-  /// rare en pratique, largement compensé par les vrais doublons de
-  /// casse/espacement qu'il permet de fusionner.
-  static String _normalizeForGrouping(String name) => name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
-
-  // Même heuristique que FilenameSanitizer._camelCaseBoundary : permet de
-  // retrouver les frontières de mots d'une variante collée ("DaftPunk")
-  // quand aucune variante déjà espacée n'existe dans le groupe.
-  static final RegExp _camelCaseBoundary = RegExp(r'(?<=[a-zA-Z0-9])(?=[A-Z][a-z])');
-
-  /// Choisit le nom canonique d'un groupe de variantes : préfère une variante
-  /// déjà correctement espacée (la plus longue, pour capter tout mot
-  /// additionnel) plutôt que la première alphabétiquement — sans quoi
-  /// fusionner "DaftPunk"/"Daft Punk" pourrait produire "Daftpunk" en
-  /// canonique si la variante collée gagnait le tri. À défaut, retombe sur la
-  /// variante en casse mixte (meilleur indice de frontières de mots) avec un
-  /// espacement synthétique.
-  static String _pickCanonical(Set<String> variants) {
-    final Iterable<String> spaced = variants.where((v) => v.contains(' '));
-    if (spaced.isNotEmpty) {
-      return _toTitleCase(spaced.reduce((a, b) => b.length > a.length ? b : a));
-    }
-
-    final Iterable<String> mixedCase = variants.where((v) => v != v.toUpperCase() && v != v.toLowerCase());
-    final String source = (mixedCase.isNotEmpty ? mixedCase : variants).reduce((a, b) => b.length > a.length ? b : a);
-    return _toTitleCase(source.replaceAllMapped(_camelCaseBoundary, (m) => ' '));
-  }
-
-  static String _toTitleCase(String value) {
-    return value.toLowerCase().split(' ').map((word) {
-      if (word.isEmpty) return word;
-      return word[0].toUpperCase() + word.substring(1);
-    }).join(' ');
-  }
 }

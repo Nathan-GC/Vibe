@@ -115,7 +115,7 @@ Ce document sert de référence contextuelle et technique pour l'application mob
 * **Fallback de Pochette :** Si un morceau ne possède pas de visuel propre, la pochette de la playlist en cours est affichée automatiquement.
 * **Bouclage Automatique (Loop) :** La lecture repart au titre n°1 (index 0) dès que le dernier morceau de la playlist se termine.
 * **Persistance du Fond Vibe :** Le fond animé/shader/vidéo reste visible en arrière-plan lors du balayage latéral vers la file d'attente (Queue) grâce à la conservation d'élément par `GlobalKey`.
-* **Mode Focus (Immersif) :** Fondu progressif des éléments d'interface après 5 secondes d'inactivité avec masquage système `immersiveSticky`.
+* **Mode Focus (Immersif) :** Fondu progressif des éléments d'interface après 7 secondes d'inactivité avec masquage système `immersiveSticky`.
 
 ---
 
