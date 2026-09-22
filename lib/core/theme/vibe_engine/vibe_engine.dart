@@ -100,7 +100,7 @@ extension VibePresetStyle on VibePreset {
         VibePreset.organic => 'Organic',
         VibePreset.oled => 'Space',
         VibePreset.custom => 'Personnalisé',
-        VibePreset.newOled => 'New OLED',
+        VibePreset.newOled => 'OLED',
       };
 }
 
