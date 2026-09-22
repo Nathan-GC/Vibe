@@ -179,40 +179,59 @@ class _TabShell extends ConsumerWidget {
       },
       child: Scaffold(
         body: navigationShell,
-        bottomNavigationBar: SafeArea(
-          bottom: true,
-          child: NavigationBar(
-            selectedIndex: navigationShell.currentIndex,
-            onDestinationSelected: (index) {
-              navigationShell.goBranch(index);
-              // Déclencheur 4 : bascule d'onglet via la barre de navigation —
-              // le point d'entrée le plus courant pour "revenir sur l'onglet
-              // Lecteur en mode Focus" (retest QA), réappliqué explicitement
-              // ici plutôt que supposé couvert par une reconstruction
-              // implicite de `_TabShell`.
-              _syncSystemUiMode(
-                onPlayerTab: index == _playerTabIndex,
-                isImmersive: ref.read(playerImmersiveModeProvider),
-              );
-            },
-            destinations: const [
-              NavigationDestination(
-                icon: Icon(Icons.explore_outlined),
-                selectedIcon: Icon(Icons.explore),
-                label: 'Découverte',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.play_circle_outline),
-                selectedIcon: Icon(Icons.play_circle),
-                label: 'Lecteur',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.library_music_outlined),
-                selectedIcon: Icon(Icons.library_music),
-                label: 'Espace',
-              ),
-            ],
-          ),
+        // Bug régression (Focus Mode) : la barre de navigation restait
+        // visible par-dessus le canevas noir du mode immersif — seuls les
+        // contrôles PROPRES au Player réagissaient à `isImmersive`, cette
+        // coque de navigation (racine, partagée par les 3 onglets) n'en
+        // tenait aucun compte. Repliée en hauteur (AnimatedSize) plutôt que
+        // simplement masquée d'un coup, avec la même durée que le fondu des
+        // contrôles du Player (`kImmersiveTransitionDuration`) pour que les
+        // deux transitionnent ensemble. Seulement quand on est SUR l'onglet
+        // Lecteur : le minuteur d'inactivité peut activer `isImmersive`
+        // pendant que Découverte/Espace est au premier plan (voir
+        // _syncSystemUiMode) — la barre de navigation de ces onglets ne doit
+        // jamais disparaître dans ce cas.
+        bottomNavigationBar: AnimatedSize(
+          duration: kImmersiveTransitionDuration,
+          curve: Curves.easeInOut,
+          alignment: Alignment.topCenter,
+          child: (onPlayerTab && isImmersive)
+              ? const SizedBox.shrink()
+              : SafeArea(
+                  bottom: true,
+                  child: NavigationBar(
+                    selectedIndex: navigationShell.currentIndex,
+                    onDestinationSelected: (index) {
+                      navigationShell.goBranch(index);
+                      // Déclencheur 4 : bascule d'onglet via la barre de
+                      // navigation — le point d'entrée le plus courant pour
+                      // "revenir sur l'onglet Lecteur en mode Focus" (retest
+                      // QA), réappliqué explicitement ici plutôt que supposé
+                      // couvert par une reconstruction implicite de `_TabShell`.
+                      _syncSystemUiMode(
+                        onPlayerTab: index == _playerTabIndex,
+                        isImmersive: ref.read(playerImmersiveModeProvider),
+                      );
+                    },
+                    destinations: const [
+                      NavigationDestination(
+                        icon: Icon(Icons.explore_outlined),
+                        selectedIcon: Icon(Icons.explore),
+                        label: 'Découverte',
+                      ),
+                      NavigationDestination(
+                        icon: Icon(Icons.play_circle_outline),
+                        selectedIcon: Icon(Icons.play_circle),
+                        label: 'Lecteur',
+                      ),
+                      NavigationDestination(
+                        icon: Icon(Icons.library_music_outlined),
+                        selectedIcon: Icon(Icons.library_music),
+                        label: 'Espace',
+                      ),
+                    ],
+                  ),
+                ),
         ),
       ),
     );

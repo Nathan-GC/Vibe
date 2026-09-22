@@ -1,5 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+/// Durée des transitions déclenchées par le mode immersif — partagée entre
+/// `MasterPlayerScreen._PlayerPageState` (fondu des contrôles/pochette) et
+/// `_TabShell` (repli de la barre de navigation, voir router.dart) pour que
+/// tous les éléments qui réagissent à `playerImmersiveModeProvider`
+/// transitionnent ensemble plutôt que de se désynchroniser visuellement.
+const Duration kImmersiveTransitionDuration = Duration(milliseconds: 1500);
+
 /// Mode Canvas immersif du Master Player (voir MasterPlayerScreen._PlayerPage)
 /// — sorti de l'état local du widget pour que la coque de navigation
 /// (`_TabShell`, router.dart) puisse à la fois le lire (pour décider si le

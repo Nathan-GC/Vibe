@@ -213,7 +213,10 @@ class _PlayerPageState extends ConsumerState<_PlayerPage>
   // Section 3 : 7s (au lieu des 15s précédentes) avant le passage automatique
   // en mode Canvas/Focus.
   static const Duration _inactivityDelay = Duration(seconds: 7);
-  static const Duration _fadeDuration = Duration(milliseconds: 1500);
+  // Partagée avec `_TabShell` (repli de la barre de navigation, voir
+  // router.dart et player_immersive_mode_provider.dart) pour que les deux
+  // transitionnent ensemble.
+  static const Duration _fadeDuration = kImmersiveTransitionDuration;
 
   Timer? _inactivityTimer;
 
