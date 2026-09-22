@@ -1,6 +1,8 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:open_filex/open_filex.dart';
 
 import '../../../core/storage/database/track_repository.dart';
 import '../../../core/theme/design_system/app_spacing.dart';
@@ -89,6 +91,12 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: const Text('Fusion automatique (doublons de casse) ou sélection manuelle'),
             onTap: () => _openArtistFusionDialog(context, ref),
           ),
+          ListTile(
+            leading: const Icon(Icons.system_update_outlined),
+            title: const Text('Mise à jour de l\'application (APK)'),
+            subtitle: const Text('Installer un fichier .apk depuis le stockage local'),
+            onTap: () => _updateFromApk(context),
+          ),
           const Divider(height: 1),
           const ListTile(
             leading: Icon(Icons.info_outline),
@@ -142,6 +150,27 @@ class SettingsScreen extends ConsumerWidget {
       SnackBar(
         content: Text(mergedGroups == 0 ? 'Aucun doublon de casse trouvé.' : '$mergedGroups artiste(s) fusionné(s).'),
       ),
+    );
+  }
+
+  /// Mise à jour locale depuis un APK (Section 6) : le fichier choisi est
+  /// ouvert via `open_filex`, qui déclenche l'intent natif ACTION_VIEW
+  /// (`application/vnd.android.package-archive`) — c'est l'installeur système
+  /// d'Android qui prend le relais depuis là (confirmation utilisateur,
+  /// éventuel écran "Autoriser cette source" si REQUEST_INSTALL_PACKAGES
+  /// n'a jamais été accordée pour cette app). Base SQLite et fichiers
+  /// importés (StorageManagerService) vivent dans le stockage propre à
+  /// l'app : une mise à jour standard (même package, même signature) les
+  /// préserve nativement, sans action de notre part.
+  Future<void> _updateFromApk(BuildContext context) async {
+    final List<PlatformFile> picked = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: ['apk']);
+    final String? path = picked.isEmpty ? null : picked.first.path;
+    if (path == null) return;
+
+    final OpenResult result = await OpenFilex.open(path);
+    if (!context.mounted || result.type == ResultType.done) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Installation impossible : ${result.message}')),
     );
   }
 
