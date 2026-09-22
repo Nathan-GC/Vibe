@@ -9,6 +9,7 @@ import '../metadata_extractor/artist_name_normalizer.dart';
 import '../scanner/scanned_track.dart';
 import 'app_database.dart';
 import 'database_provider.dart';
+import 'track_enricher.dart';
 
 final Provider<TrackRepository> trackRepositoryProvider = Provider<TrackRepository>((ref) {
   return TrackRepository(ref.watch(appDatabaseProvider));
@@ -178,10 +179,18 @@ class TrackRepository {
   /// correction manuelle explicite, contrairement à [enrichFromOnlineMetadata]
   /// qui ne fait que compléter. Toujours sûr à rappeler : un titre déjà
   /// enrichi peut être ré-enrichi ou renommé à tout moment.
+  ///
+  /// [enrichmentStatus] (Section 1) : le contenu de l'éditeur ne dit pas à
+  /// lui seul si ces valeurs viennent d'une saisie libre ou de la validation
+  /// d'une suggestion iTunes/YouTube — c'est à l'appelant (MetadataEditorModal)
+  /// de trancher via `EnrichmentStatus.enrichedManualEdit`/
+  /// `enrichedManualItunes`/`enrichedManualYoutube` selon ce que l'utilisateur
+  /// vient réellement de faire.
   Future<void> updateMetadata(
     String trackId, {
     required String title,
     required String artist,
+    required EnrichmentStatus enrichmentStatus,
     String? album,
     int? releaseYear,
     String? coverArtUrl,
@@ -201,10 +210,10 @@ class TrackRepository {
           requiresUserReview: const Value(false),
           // Une correction manuelle change les données de départ : le
           // circuit-breaker d'enrichissement (voir [EnrichmentStatus]) repart
-          // à zéro plutôt que de rester bloqué `failedPermanently`/
+          // à zéro plutôt que de rester bloqué `needsManualReview`/
           // `requiresReview` sur un Titre/Artiste qui n'existe plus.
           enrichmentAttempts: const Value(0),
-          enrichmentStatus: const Value(EnrichmentStatus.pending),
+          enrichmentStatus: Value(enrichmentStatus),
         ),
       );
 
@@ -216,39 +225,43 @@ class TrackRepository {
   }
 
   /// Nombre de tentatives d'enrichissement automatique avant abandon
-  /// définitif — voir [EnrichmentStatus.failedPermanently].
+  /// définitif — voir [EnrichmentStatus.needsManualReview].
   static const int maxEnrichmentAttempts = 2;
 
-  /// `false` si [trackId] est `failedPermanently` (tentatives épuisées) ou
+  /// `false` si [trackId] est `needsManualReview` (tentatives épuisées) ou
   /// `requiresReview` (Titre/Artiste trop ambigus depuis le nom de fichier) —
   /// évite à [TrackAutoEnricher] de rappeler l'API pour rien. Un morceau
-  /// introuvable ou déjà `success`/`pending` reste éligible.
+  /// introuvable ou déjà enrichi (`enrichedAuto*`/`enrichedManual*`) ou
+  /// `pending` reste éligible.
   Future<bool> shouldAttemptEnrichment(String trackId) async {
     final Track? track = await findById(trackId);
     if (track == null) return false;
-    return track.enrichmentStatus != EnrichmentStatus.failedPermanently &&
+    return track.enrichmentStatus != EnrichmentStatus.needsManualReview &&
         track.enrichmentStatus != EnrichmentStatus.requiresReview;
   }
 
   /// Met à jour le circuit-breaker après une tentative d'enrichissement
-  /// [TrackAutoEnricher] menée à son terme (recherche API réussie, qu'une
-  /// correspondance fiable ait été trouvée ou non) — jamais appelé après une
-  /// simple erreur réseau/timeout, qui ne doit pas consommer de tentative
-  /// (voir [TrackAutoEnricher.enrichTrack]).
-  Future<void> recordEnrichmentOutcome(String trackId, {required bool success}) async {
+  /// [TrackAutoEnricher]/[YoutubeAutoEnricher] menée à son terme (recherche
+  /// API réussie, qu'une correspondance fiable ait été trouvée ou non) —
+  /// jamais appelé après une simple erreur réseau/timeout, qui ne doit pas
+  /// consommer de tentative (voir [TrackAutoEnricher.enrichTrack]). [source]
+  /// détermine le statut de provenance appliqué en cas de succès (Section 1).
+  Future<void> recordEnrichmentOutcome(String trackId, {required bool success, required EnrichmentSource source}) async {
     final Track? track = await findById(trackId);
     if (track == null) return;
 
     if (success) {
+      final EnrichmentStatus status =
+          source == EnrichmentSource.itunes ? EnrichmentStatus.enrichedAutoItunes : EnrichmentStatus.enrichedAutoYoutube;
       await (_db.update(_db.tracks)..where((t) => t.id.equals(trackId))).write(
-        const TracksCompanion(enrichmentStatus: Value(EnrichmentStatus.success)),
+        TracksCompanion(enrichmentStatus: Value(status)),
       );
       return;
     }
 
     final int attempts = track.enrichmentAttempts + 1;
     final EnrichmentStatus status =
-        attempts >= maxEnrichmentAttempts ? EnrichmentStatus.failedPermanently : EnrichmentStatus.pending;
+        attempts >= maxEnrichmentAttempts ? EnrichmentStatus.needsManualReview : EnrichmentStatus.pending;
     await (_db.update(_db.tracks)..where((t) => t.id.equals(trackId))).write(
       TracksCompanion(enrichmentAttempts: Value(attempts), enrichmentStatus: Value(status)),
     );

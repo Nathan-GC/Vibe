@@ -36,12 +36,12 @@ class YoutubeAutoEnricher implements TrackEnricher {
 
     final String? thumbnailUrl = results.isNotEmpty ? results.first.coverArtUrl : null;
     if (thumbnailUrl == null) {
-      await _trackRepository.recordEnrichmentOutcome(trackId, success: false);
+      await _trackRepository.recordEnrichmentOutcome(trackId, success: false, source: EnrichmentSource.youtube);
       return false;
     }
 
     final bool ok = await _trackRepository.enrichCoverArtFromYoutube(trackId, thumbnailUrl);
-    await _trackRepository.recordEnrichmentOutcome(trackId, success: ok);
+    await _trackRepository.recordEnrichmentOutcome(trackId, success: ok, source: EnrichmentSource.youtube);
     return ok;
   }
 }

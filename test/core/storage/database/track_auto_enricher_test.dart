@@ -146,7 +146,7 @@ void main() {
   });
 
   group('enrichment circuit breaker', () {
-    test('marks a track failedPermanently after maxEnrichmentAttempts unreliable results, then skips the API entirely', () async {
+    test('marks a track needsManualReview after maxEnrichmentAttempts unreliable results, then skips the API entirely', () async {
       await insertTrack(id: 't1', title: 'Feel Good', artists: ['Charlotte Cardin']);
       final client = _FakeMetadataApiClient([
         const OnlineTrackResult(artist: 'Charlotte Cardin', title: 'Confetti', album: '99 Nights'),
@@ -158,16 +158,16 @@ void main() {
         expect(ok, isFalse);
       }
       final track = await repository.findById('t1');
-      expect(track!.enrichmentStatus, EnrichmentStatus.failedPermanently);
+      expect(track!.enrichmentStatus, EnrichmentStatus.needsManualReview);
       expect(track.enrichmentAttempts, TrackRepository.maxEnrichmentAttempts);
 
       final int callsBeforeExtraAttempt = client.callCount;
       final bool okAfterBanned = await enricher.enrichTrack(trackId: 't1', title: 'Feel Good', artists: ['Charlotte Cardin']);
       expect(okAfterBanned, isFalse);
-      expect(client.callCount, callsBeforeExtraAttempt, reason: 'failedPermanently must not trigger another API call');
+      expect(client.callCount, callsBeforeExtraAttempt, reason: 'needsManualReview must not trigger another API call');
     });
 
-    test('marks a successful enrichment as success', () async {
+    test('marks a successful enrichment as enrichedAutoItunes', () async {
       await insertTrack(id: 't1', title: 'One More Time', artists: ['Daft Punk']);
       final enricher = TrackAutoEnricher(
         metadataApiClient: _FakeMetadataApiClient([
@@ -179,7 +179,7 @@ void main() {
       await enricher.enrichTrack(trackId: 't1', title: 'One More Time', artists: ['Daft Punk']);
 
       final track = await repository.findById('t1');
-      expect(track!.enrichmentStatus, EnrichmentStatus.success);
+      expect(track!.enrichmentStatus, EnrichmentStatus.enrichedAutoItunes);
     });
 
     test('skips tracks already marked requiresReview without calling the API', () async {
@@ -261,7 +261,7 @@ void main() {
 
       expect(ok, isTrue);
       final track = await repository.findById('t1');
-      expect(track!.enrichmentStatus, EnrichmentStatus.success);
+      expect(track!.enrichmentStatus, EnrichmentStatus.enrichedAutoItunes);
       expect(track.album, 'Discovery');
     });
   });

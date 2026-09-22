@@ -95,14 +95,76 @@ class LibraryEnrichmentFilter extends Notifier<bool> {
 final NotifierProvider<LibraryEnrichmentFilter, bool> libraryEnrichmentFilterProvider =
     NotifierProvider<LibraryEnrichmentFilter, bool>(LibraryEnrichmentFilter.new);
 
-/// Un morceau `failedPermanently` (tentatives épuisées) ou `requiresReview`
+/// Un morceau `needsManualReview` (tentatives épuisées) ou `requiresReview`
 /// (nom de fichier trop ambigu) reste sans pochette/mots-clés mais ne doit
 /// plus être proposé aux passes automatiques d'"Enrichir tout" — voir
 /// [EnrichmentStatus], [TrackRepository.shouldAttemptEnrichment].
 bool trackNeedsEnrichment(Track track) =>
     (track.coverArtPath.isEmpty || track.tags.isEmpty) &&
-    track.enrichmentStatus != EnrichmentStatus.failedPermanently &&
+    track.enrichmentStatus != EnrichmentStatus.needsManualReview &&
     track.enrichmentStatus != EnrichmentStatus.requiresReview;
+
+/// Critères de filtrage multi-provenance de la Bibliothèque (Section 1) —
+/// distinct de [LibraryEnrichmentFilter] (heuristique pochette/mots-clés
+/// manquants, cible des passes auto) : ceux-ci filtrent sur le statut exact
+/// posé par [TrackRepository.recordEnrichmentOutcome]/[TrackRepository.
+/// updateMetadata], donc sur QUI/COMMENT un morceau a été enrichi plutôt que
+/// sur ce qu'il lui manque.
+enum EnrichmentProvenanceFilter { manualTotal, manualItunes, manualYoutube, autoItunes, autoYoutube, needsManualReview }
+
+extension EnrichmentProvenanceFilterStyle on EnrichmentProvenanceFilter {
+  String get label => switch (this) {
+        EnrichmentProvenanceFilter.manualTotal => 'Manuel (total)',
+        EnrichmentProvenanceFilter.manualItunes => 'Manuel iTunes',
+        EnrichmentProvenanceFilter.manualYoutube => 'Manuel YouTube',
+        EnrichmentProvenanceFilter.autoItunes => 'Auto iTunes',
+        EnrichmentProvenanceFilter.autoYoutube => 'Auto YouTube',
+        EnrichmentProvenanceFilter.needsManualReview => 'À enrichir manuellement',
+      };
+
+  /// Statuts [EnrichmentStatus] correspondant à ce critère — [manualTotal]
+  /// regroupe les trois variantes manuelles (édition libre + suggestion
+  /// iTunes/YouTube validée).
+  Set<EnrichmentStatus> get matchingStatuses => switch (this) {
+        EnrichmentProvenanceFilter.manualTotal => const {
+            EnrichmentStatus.enrichedManualEdit,
+            EnrichmentStatus.enrichedManualItunes,
+            EnrichmentStatus.enrichedManualYoutube,
+          },
+        EnrichmentProvenanceFilter.manualItunes => const {EnrichmentStatus.enrichedManualItunes},
+        EnrichmentProvenanceFilter.manualYoutube => const {EnrichmentStatus.enrichedManualYoutube},
+        EnrichmentProvenanceFilter.autoItunes => const {EnrichmentStatus.enrichedAutoItunes},
+        EnrichmentProvenanceFilter.autoYoutube => const {EnrichmentStatus.enrichedAutoYoutube},
+        EnrichmentProvenanceFilter.needsManualReview => const {EnrichmentStatus.needsManualReview},
+      };
+}
+
+/// Sélection multiple de puces de provenance (Section 1) — plusieurs critères
+/// actifs à la fois s'unissent (OU logique, voir [filterTracksByProvenance])
+/// plutôt que de se remplacer, contrairement aux filtres "À vérifier"/"À
+/// enrichir" (mutuellement exclusifs par priorité, voir LibraryScreen.build).
+class LibraryProvenanceFilter extends Notifier<Set<EnrichmentProvenanceFilter>> {
+  @override
+  Set<EnrichmentProvenanceFilter> build() => const {};
+
+  void toggle(EnrichmentProvenanceFilter filter) {
+    final Set<EnrichmentProvenanceFilter> next = {...state};
+    if (!next.remove(filter)) next.add(filter);
+    state = next;
+  }
+
+  void clear() => state = const {};
+}
+
+final NotifierProvider<LibraryProvenanceFilter, Set<EnrichmentProvenanceFilter>> libraryProvenanceFilterProvider =
+    NotifierProvider<LibraryProvenanceFilter, Set<EnrichmentProvenanceFilter>>(LibraryProvenanceFilter.new);
+
+/// Morceaux dont le statut correspond à au moins un des [filters] actifs.
+List<Track> filterTracksByProvenance(List<Track> tracks, Set<EnrichmentProvenanceFilter> filters) {
+  if (filters.isEmpty) return tracks;
+  final Set<EnrichmentStatus> allowedStatuses = filters.expand((f) => f.matchingStatuses).toSet();
+  return tracks.where((t) => allowedStatuses.contains(t.enrichmentStatus)).toList();
+}
 
 /// Morceaux strictement en double (Titre + Artiste identiques) — alerte
 /// visible dans la Bibliothèque tant que la liste n'est pas vide, voir

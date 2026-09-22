@@ -312,21 +312,28 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     final bool reviewFilterActive = ref.watch(libraryReviewFilterProvider);
     final bool enrichmentFilterActive =
         ref.watch(libraryEnrichmentFilterProvider);
+    final Set<EnrichmentProvenanceFilter> provenanceFilters =
+        ref.watch(libraryProvenanceFilterProvider);
     final LibrarySort sort = ref.watch(librarySortProvider);
     final int needsReviewCount = needsReviewTracks.maybeWhen(
         data: (data) => data.length, orElse: () => 0);
     final int needsEnrichmentCount = needsEnrichmentTracks.length;
+    final List<Track> allTracksData = allTracks.value ?? const [];
+    final bool provenanceFilterActive = provenanceFilters.isNotEmpty;
 
     final AsyncValue<List<Track>> tracks = reviewFilterActive
         ? needsReviewTracks
         : enrichmentFilterActive
             ? AsyncValue.data(needsEnrichmentTracks)
-            : allTracks;
+            : provenanceFilterActive
+                ? AsyncValue.data(filterTracksByProvenance(allTracksData, provenanceFilters))
+                : allTracks;
 
     // Ergonomie navigation Android (2.B) : un filtre actif est un état de la
     // page, pas une vraie route/modale — le bouton Retour doit d'abord
     // l'effacer avant de vraiment quitter cette page.
-    final bool filterActive = reviewFilterActive || enrichmentFilterActive;
+    final bool filterActive =
+        reviewFilterActive || enrichmentFilterActive || provenanceFilterActive;
 
     return PopScope(
       canPop: !filterActive,
@@ -337,6 +344,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         }
         if (enrichmentFilterActive) {
           ref.read(libraryEnrichmentFilterProvider.notifier).toggle();
+        }
+        if (provenanceFilterActive) {
+          ref.read(libraryProvenanceFilterProvider.notifier).clear();
         }
       },
       child: Scaffold(
@@ -436,6 +446,42 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                           onPressed: () =>
                               context.push('/space/library/duplicates'),
                         ),
+                    ],
+                  ),
+                ),
+              ),
+            // Filtrage multi-provenance (Section 1) — distinct de la puce "À
+            // enrichir" ci-dessus (heuristique pochette/mots-clés manquants) :
+            // ceux-ci renseignent QUI/COMMENT un morceau a été enrichi.
+            // Masqué tant qu'aucun morceau n'a de statut pertinent, pour ne
+            // pas encombrer une bibliothèque tout juste importée.
+            if (allTracksData.any((t) =>
+                t.enrichmentStatus != EnrichmentStatus.pending &&
+                t.enrichmentStatus != EnrichmentStatus.requiresReview))
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      for (final filter in EnrichmentProvenanceFilter.values)
+                        Builder(builder: (context) {
+                          final int count = allTracksData
+                              .where((t) => filter.matchingStatuses
+                                  .contains(t.enrichmentStatus))
+                              .length;
+                          if (count == 0) return const SizedBox.shrink();
+                          return FilterChip(
+                            label: Text('${filter.label} ($count)'),
+                            selected: provenanceFilters.contains(filter),
+                            onSelected: (_) => ref
+                                .read(libraryProvenanceFilterProvider.notifier)
+                                .toggle(filter),
+                          );
+                        }),
                     ],
                   ),
                 ),

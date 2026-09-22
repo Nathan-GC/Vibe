@@ -64,6 +64,13 @@ class _MetadataEditorModalState extends ConsumerState<MetadataEditorModal> {
   // du flux (affichage des résultats, application sur les champs manuels).
   EnrichmentSource _searchSource = EnrichmentSource.itunes;
 
+  // Dernière suggestion appliquée (Section 1) — comparée à l'enregistrement
+  // pour distinguer une "validation de match" d'une simple saisie manuelle,
+  // voir [_resolveEnrichmentStatus]. `null` tant qu'aucune suggestion n'a été
+  // tapée dans cette session d'édition.
+  OnlineTrackResult? _lastAppliedSuggestion;
+  EnrichmentSource? _appliedSuggestionSource;
+
   @override
   void initState() {
     super.initState();
@@ -159,7 +166,24 @@ class _MetadataEditorModalState extends ConsumerState<MetadataEditorModal> {
       _yearController.text = suggestion.releaseYear?.toString() ?? '';
       if (suggestion.genre != null) _genreController.text = suggestion.genre!;
       _selectedCoverArtUrl = suggestion.coverArtUrl;
+      _lastAppliedSuggestion = suggestion;
+      _appliedSuggestionSource = _searchSource;
     });
+  }
+
+  /// Statut de provenance appliqué à l'enregistrement (Section 1) : si
+  /// Artiste/Titre sont encore exactement ceux de la dernière suggestion
+  /// tapée, l'utilisateur vient de "valider un match" (source de cette
+  /// suggestion) ; toute retouche d'Artiste/Titre après coup repasse en
+  /// édition manuelle pure, même si une suggestion avait été tapée avant.
+  EnrichmentStatus _resolveEnrichmentStatus() {
+    final OnlineTrackResult? suggestion = _lastAppliedSuggestion;
+    final EnrichmentSource? source = _appliedSuggestionSource;
+    if (suggestion == null || source == null) return EnrichmentStatus.enrichedManualEdit;
+    if (_artistController.text.trim() != suggestion.artist || _titleController.text.trim() != suggestion.title) {
+      return EnrichmentStatus.enrichedManualEdit;
+    }
+    return source == EnrichmentSource.itunes ? EnrichmentStatus.enrichedManualItunes : EnrichmentStatus.enrichedManualYoutube;
   }
 
   /// Pochette manuelle (Option 2) — même mécanique que
@@ -190,6 +214,7 @@ class _MetadataEditorModalState extends ConsumerState<MetadataEditorModal> {
           releaseYear: int.tryParse(_yearController.text.trim()),
           coverArtUrl: _selectedCoverArtUrl,
           genre: _genreController.text.trim(),
+          enrichmentStatus: _resolveEnrichmentStatus(),
         );
     if (mounted) Navigator.of(context).pop();
   }

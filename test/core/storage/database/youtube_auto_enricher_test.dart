@@ -57,7 +57,7 @@ void main() {
     expect(ok, isTrue);
     final track = await repository.findById('t1');
     expect(track!.coverArtPath, 'https://i.ytimg.com/vi/x/maxresdefault.jpg');
-    expect(track.enrichmentStatus, EnrichmentStatus.success);
+    expect(track.enrichmentStatus, EnrichmentStatus.enrichedAutoYoutube);
     // Jamais de correction automatique de Titre/Artiste depuis YouTube (nom de
     // chaîne non fiable) — contrairement à TrackAutoEnricher.
     expect(track.title, 'Bootleg Mix');
@@ -81,7 +81,7 @@ void main() {
     expect(track!.coverArtPath, 'local/existing.jpg');
   });
 
-  test('marks failedPermanently after maxEnrichmentAttempts empty results, then skips the API', () async {
+  test('marks needsManualReview after maxEnrichmentAttempts empty results, then skips the API', () async {
     await insertTrack(id: 't1', title: 'Nothing Findable', artists: ['Unknown']);
     final service = _FakeYoutubeEnricherService(const []);
     final enricher = YoutubeAutoEnricher(youtubeEnricherService: service, trackRepository: repository);
@@ -90,7 +90,7 @@ void main() {
       expect(await enricher.enrichTrack(trackId: 't1', title: 'Nothing Findable', artists: ['Unknown']), isFalse);
     }
     final track = await repository.findById('t1');
-    expect(track!.enrichmentStatus, EnrichmentStatus.failedPermanently);
+    expect(track!.enrichmentStatus, EnrichmentStatus.needsManualReview);
 
     final int callsBefore = service.callCount;
     expect(await enricher.enrichTrack(trackId: 't1', title: 'Nothing Findable', artists: ['Unknown']), isFalse);

@@ -95,18 +95,20 @@ class TrackAutoEnricher implements TrackEnricher {
       // interne n'a eu lieu : l'échec est définitif pour ce passage, donc
       // consigné comme tel pour que le morceau reste visible dans "À
       // enrichir" plutôt que de rester dans un flou non comptabilisé.
-      if (singleAttempt) await _trackRepository.recordEnrichmentOutcome(trackId, success: false);
+      if (singleAttempt) {
+        await _trackRepository.recordEnrichmentOutcome(trackId, success: false, source: EnrichmentSource.itunes);
+      }
       return false;
     }
     if (primaryMatch != null) {
       final bool ok = await _trackRepository.enrichFromOnlineMetadata(trackId, primaryMatch);
-      await _trackRepository.recordEnrichmentOutcome(trackId, success: ok);
+      await _trackRepository.recordEnrichmentOutcome(trackId, success: ok, source: EnrichmentSource.itunes);
       return ok;
     }
 
     final bool hasBothFields = artist.isNotEmpty && artist != 'Unknown' && title.isNotEmpty;
     if (singleAttempt || !hasBothFields) {
-      await _trackRepository.recordEnrichmentOutcome(trackId, success: false);
+      await _trackRepository.recordEnrichmentOutcome(trackId, success: false, source: EnrichmentSource.itunes);
       return false;
     }
 
@@ -117,12 +119,12 @@ class TrackAutoEnricher implements TrackEnricher {
       return false;
     }
     if (swappedMatch == null) {
-      await _trackRepository.recordEnrichmentOutcome(trackId, success: false);
+      await _trackRepository.recordEnrichmentOutcome(trackId, success: false, source: EnrichmentSource.itunes);
       return false;
     }
 
     final bool ok = await _trackRepository.correctReversedTitleArtist(trackId, swappedMatch);
-    await _trackRepository.recordEnrichmentOutcome(trackId, success: ok);
+    await _trackRepository.recordEnrichmentOutcome(trackId, success: ok, source: EnrichmentSource.itunes);
     return ok;
   }
 

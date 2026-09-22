@@ -47,21 +47,37 @@ class VibeCustomEffectConverter extends TypeConverter<VibeCustomEffect, String> 
   String toSql(VibeCustomEffect value) => value.name;
 }
 
-/// Statut du circuit-breaker d'enrichissement automatique (voir
-/// `Tracks.enrichmentStatus`, `TrackAutoEnricher`, `TrackRepository.
-/// shouldAttemptEnrichment`/`recordEnrichmentOutcome`) :
+/// Statut du circuit-breaker d'enrichissement automatique ET provenance de
+/// l'enrichissement (Section 1 — voir `Tracks.enrichmentStatus`,
+/// `TrackAutoEnricher`, `YoutubeAutoEnricher`, `TrackRepository.
+/// shouldAttemptEnrichment`/`recordEnrichmentOutcome`/`updateMetadata`) :
 ///  - [pending] : éligible aux prochaines tentatives auto (post-import,
 ///    "Enrichir tout").
-///  - [success] : déjà enrichi avec confiance, plus besoin de retenter.
-///  - [failedPermanently] : `maxEnrichmentAttempts` tentatives épuisées sans
-///    correspondance fiable — ne repasse plus jamais dans la file
-///    automatique (jusqu'à une correction manuelle, voir
-///    `TrackRepository.updateMetadata`, qui réinitialise ce statut).
+///  - [enrichedAutoItunes] / [enrichedAutoYoutube] : enrichi automatiquement
+///    avec confiance par la source indiquée, plus besoin de retenter.
+///  - [enrichedManualEdit] : Titre/Artiste/Album saisis à la main dans
+///    l'éditeur, sans passer par une suggestion réseau.
+///  - [enrichedManualItunes] / [enrichedManualYoutube] : suggestion de
+///    l'onglet réseau correspondant validée telle quelle dans l'éditeur.
+///  - [needsManualReview] : `maxEnrichmentAttempts` tentatives auto épuisées
+///    sans correspondance fiable — ne repasse plus jamais dans la file
+///    automatique et s'affiche sous "À enrichir manuellement" (jusqu'à une
+///    correction manuelle, voir `TrackRepository.updateMetadata`, qui
+///    réinitialise ce statut).
 ///  - [requiresReview] : titre/artiste trop ambigus dès le nom de fichier
 ///    (`requiresUserReview`) pour même tenter une requête API — évite de
 ///    gaspiller des appels réseau sur un morceau qu'une confirmation humaine
 ///    va de toute façon changer.
-enum EnrichmentStatus { pending, success, failedPermanently, requiresReview }
+enum EnrichmentStatus {
+  pending,
+  enrichedAutoItunes,
+  enrichedAutoYoutube,
+  enrichedManualEdit,
+  enrichedManualItunes,
+  enrichedManualYoutube,
+  needsManualReview,
+  requiresReview,
+}
 
 class EnrichmentStatusConverter extends TypeConverter<EnrichmentStatus, String> {
   const EnrichmentStatusConverter();
@@ -206,7 +222,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 10;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -248,6 +264,23 @@ class AppDatabase extends _$AppDatabase {
           if (from < 9) {
             await m.addColumn(playlists, playlists.customEffect);
             await m.addColumn(playlists, playlists.customBackgroundVideoPath);
+          }
+          if (from < 10) {
+            // Éclatement de [EnrichmentStatus] (Section 1) : les anciennes
+            // valeurs texte 'success'/'failedPermanently' n'existent plus
+            // côté Dart (EnrichmentStatusConverter.fromSql retomberait
+            // silencieusement sur `pending`, perdant tout historique
+            // d'enrichissement) — remappées en SQL brut vers leurs
+            // équivalents le plus proche avant que l'app ne relise ces
+            // lignes : la provenance exacte (iTunes vs YouTube) d'un ancien
+            // `success` n'est pas connue, iTunes (source par défaut) sert de
+            // repli raisonnable.
+            await customStatement(
+              "UPDATE tracks SET enrichment_status = 'enrichedAutoItunes' WHERE enrichment_status = 'success'",
+            );
+            await customStatement(
+              "UPDATE tracks SET enrichment_status = 'needsManualReview' WHERE enrichment_status = 'failedPermanently'",
+            );
           }
         },
       );
