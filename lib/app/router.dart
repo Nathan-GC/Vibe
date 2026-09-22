@@ -15,6 +15,7 @@ import '../features/player/presentation/master_player_screen.dart';
 import '../features/playlists/presentation/editor/playlist_editor_screen.dart';
 import '../features/playlists/presentation/personal_space_screen.dart';
 import '../features/playlists/presentation/vibe_customizer/vibe_customizer_screen.dart';
+import '../features/settings/presentation/artist_fusion_screen.dart';
 import '../features/settings/presentation/settings_screen.dart';
 
 final GoRouter appRouter = GoRouter(
@@ -25,6 +26,9 @@ final GoRouter appRouter = GoRouter(
         builder: (context, state) => const OnboardingScreen()),
     GoRoute(
         path: '/settings', builder: (context, state) => const SettingsScreen()),
+    GoRoute(
+        path: '/settings/artist-fusion',
+        builder: (context, state) => const ManualArtistFusionScreen()),
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) =>
           _TabShell(navigationShell: navigationShell),

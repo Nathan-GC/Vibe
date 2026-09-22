@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:playlist_app/core/storage/database/app_database.dart';
@@ -73,5 +74,60 @@ void main() {
 
     final artistRows = await (db.select(db.trackArtists)..where((t) => t.trackId.equals('t1'))).get();
     expect(artistRows.length, 1);
+  });
+
+  group('renameOrMergeArtists (Section 4, Fusion Manuelle)', () {
+    test('renames a single artist across all their tracks while preserving other metadata', () async {
+      await repository.upsertTrack(scannedTrack(id: 't1', artists: ['Artist & A']));
+      await (db.update(db.tracks)..where((t) => t.id.equals('t1'))).write(
+        const TracksCompanion(album: Value('Some Album'), releaseYear: Value(2020), coverArtPath: Value('local/cover.jpg')),
+      );
+
+      await repository.renameOrMergeArtists(['Artist & A'], 'Artist');
+
+      final track = await repository.findById('t1');
+      expect(track!.artists, ['Artist']);
+      expect(track.album, 'Some Album');
+      expect(track.releaseYear, 2020);
+      expect(track.coverArtPath, 'local/cover.jpg');
+
+      final artistRows = await (db.select(db.trackArtists)..where((t) => t.trackId.equals('t1'))).get();
+      expect(artistRows.map((r) => r.artistName).toList(), ['Artist']);
+    });
+
+    test('merges several artists into one target name, deduplicating when a track credits more than one of them', () async {
+      await repository.upsertTrack(scannedTrack(id: 't1', artists: ['Artist & A']));
+      await repository.upsertTrack(scannedTrack(id: 't2', artists: ['Artist & B']));
+      // Crédite déjà les deux sources sur le même morceau — la fusion ne doit
+      // pas produire un doublon ["Artist", "Artist"] dans `artists`.
+      await repository.upsertTrack(scannedTrack(id: 't3', artists: ['Artist & A', 'Artist & B']));
+
+      await repository.renameOrMergeArtists(['Artist & A', 'Artist & B'], 'Artist');
+
+      expect((await repository.findById('t1'))!.artists, ['Artist']);
+      expect((await repository.findById('t2'))!.artists, ['Artist']);
+      expect((await repository.findById('t3'))!.artists, ['Artist']);
+
+      final t3ArtistRows = await (db.select(db.trackArtists)..where((t) => t.trackId.equals('t3'))).get();
+      expect(t3ArtistRows.map((r) => r.artistName).toList(), ['Artist']);
+    });
+
+    test('leaves unrelated tracks untouched', () async {
+      await repository.upsertTrack(scannedTrack(id: 't1', artists: ['Artist & A']));
+      await repository.upsertTrack(scannedTrack(id: 't2', artists: ['Unrelated Artist']));
+
+      await repository.renameOrMergeArtists(['Artist & A'], 'Artist');
+
+      expect((await repository.findById('t2'))!.artists, ['Unrelated Artist']);
+    });
+
+    test('does nothing when sourceNames is empty or targetName is blank', () async {
+      await repository.upsertTrack(scannedTrack(id: 't1', artists: ['Artist & A']));
+
+      await repository.renameOrMergeArtists([], 'Artist');
+      await repository.renameOrMergeArtists(['Artist & A'], '  ');
+
+      expect((await repository.findById('t1'))!.artists, ['Artist & A']);
+    });
   });
 }

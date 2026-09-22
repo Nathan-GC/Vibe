@@ -57,3 +57,9 @@ final allLocalArtistNamesProvider = FutureProvider.autoDispose<List<String>>((re
 final topArtistPlaylistsProvider = FutureProvider.autoDispose<List<TopArtistPlaylist>>((ref) {
   return ref.watch(artistRepositoryProvider).fetchTopArtistPlaylists();
 });
+
+/// Écran de Fusion Manuelle (Section 4, Réglages) — `autoDispose` : inutile
+/// de garder cette liste en mémoire une fois l'écran fermé.
+final allArtistsWithTrackCountProvider = FutureProvider.autoDispose<List<TopArtistPlaylist>>((ref) {
+  return ref.watch(artistRepositoryProvider).fetchAllArtistsWithTrackCount();
+});

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../core/storage/database/track_repository.dart';
 import '../../../core/theme/design_system/app_spacing.dart';
 import '../../../core/theme/global_theme/global_theme.dart';
 
@@ -79,12 +81,66 @@ class SettingsScreen extends ConsumerWidget {
           ),
           const SizedBox(height: AppSpacing.l),
           const Divider(height: 1),
+          const SizedBox(height: AppSpacing.s),
+          const _SectionTitle('Maintenance'),
+          ListTile(
+            leading: const Icon(Icons.people_outline),
+            title: const Text('Fusion & renommage d\'artistes'),
+            subtitle: const Text('Fusion automatique (doublons de casse) ou sélection manuelle'),
+            onTap: () => _openArtistFusionDialog(context, ref),
+          ),
+          const Divider(height: 1),
           const ListTile(
             leading: Icon(Icons.info_outline),
             title: Text('À propos'),
             subtitle: Text('Playlist App — lecteur local-first'),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Bouton "Fusion & renommage d'artistes" (Section 4) — choix entre
+  /// l'algorithme existant de fusion des doublons de casse
+  /// ([TrackRepository.mergeDuplicateCaseArtists], déjà accessible depuis la
+  /// Bibliothèque) et la sélection manuelle ([ManualArtistFusionScreen]).
+  Future<void> _openArtistFusionDialog(BuildContext context, WidgetRef ref) async {
+    final bool? manual = await showDialog<bool>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Fusion & renommage d\'artistes'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const ListTile(
+              leading: Icon(Icons.auto_fix_high_outlined),
+              title: Text('Fusion automatique'),
+              subtitle: Text('Regroupe les variantes de casse du même artiste'),
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const ListTile(
+              leading: Icon(Icons.checklist_outlined),
+              title: Text('Fusion manuelle'),
+              subtitle: Text('Sélectionner les artistes à fusionner ou renommer'),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (manual == null) return;
+
+    if (manual) {
+      if (context.mounted) context.push('/settings/artist-fusion');
+      return;
+    }
+
+    final int mergedGroups = await ref.read(trackRepositoryProvider).mergeDuplicateCaseArtists();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(mergedGroups == 0 ? 'Aucun doublon de casse trouvé.' : '$mergedGroups artiste(s) fusionné(s).'),
       ),
     );
   }

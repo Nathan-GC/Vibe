@@ -18,4 +18,11 @@ abstract class ArtistRepository {
   /// crédits primaires et featurings comptés indifféremment (voir
   /// `TrackArtists`), pochette du morceau le plus écouté de chacun.
   Future<List<TopArtistPlaylist>> fetchTopArtistPlaylists({int limit = 7});
+
+  /// Tous les artistes locaux avec leur nombre de morceaux (crédits
+  /// primaires et featurings confondus), triés alphabétiquement — alimente
+  /// l'écran de Fusion Manuelle (Section 4). `coverArtPath` toujours `null` :
+  /// cet écran n'affiche pas de pochette, contrairement à
+  /// [fetchTopArtistPlaylists].
+  Future<List<TopArtistPlaylist>> fetchAllArtistsWithTrackCount();
 }

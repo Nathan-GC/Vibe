@@ -88,6 +88,21 @@ class DriftArtistRepository implements ArtistRepository {
     return playlists;
   }
 
+  @override
+  Future<List<TopArtistPlaylist>> fetchAllArtistsWithTrackCount() async {
+    final countExp = _db.trackArtists.trackId.count();
+    final query = _db.selectOnly(_db.trackArtists)
+      ..addColumns([_db.trackArtists.artistName, countExp])
+      ..groupBy([_db.trackArtists.artistName])
+      ..orderBy([OrderingTerm.asc(_db.trackArtists.artistName)]);
+    final List<TypedResult> rows = await query.get();
+
+    return [
+      for (final row in rows)
+        TopArtistPlaylist(artistName: row.read(_db.trackArtists.artistName)!, trackCount: row.read(countExp) ?? 0),
+    ];
+  }
+
   // Pochette du morceau le plus écouté (`playCount`) de [artistName] — `null`
   // si aucun de ses morceaux n'a de pochette (jamais enrichi, jamais joué).
   Future<String?> _mostPlayedTrackCover(String artistName) async {

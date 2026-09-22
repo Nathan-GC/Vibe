@@ -467,6 +467,49 @@ class TrackRepository {
     return mergedGroups;
   }
 
+  /// Fusionne/renomme un ou plusieurs artistes vers [targetName] (Section 4,
+  /// Fusion Manuelle des Réglages) — même mécanique que
+  /// [mergeDuplicateCaseArtists] mais sur une sélection explicite de
+  /// l'utilisateur plutôt qu'un regroupement automatique par casse : réécrit
+  /// `tracks.artists` (JSON) et resynchronise entièrement `track_artists`
+  /// pour tout morceau créditant l'un de [sourceNames] (featuring compris),
+  /// sans jamais toucher le reste des métadonnées (album, année, pochette).
+  /// Un seul nom dans [sourceNames] équivaut à un simple renommage. La
+  /// resynchronisation complète de `track_artists` élimine d'elle-même toute
+  /// trace de l'ancien nom (pas de table `Artists` séparée à nettoyer dans ce
+  /// schéma). Sans effet si [sourceNames] est vide, si [targetName] est vide,
+  /// ou si aucun morceau ne crédite l'un de [sourceNames].
+  Future<void> renameOrMergeArtists(List<String> sourceNames, String targetName) async {
+    final String trimmedTarget = targetName.trim();
+    final Set<String> sources = sourceNames.toSet();
+    if (sources.isEmpty || trimmedTarget.isEmpty) return;
+
+    final List<Track> allTracks = await _db.select(_db.tracks).get();
+    final List<Track> affected = allTracks.where((t) => t.artists.any(sources.contains)).toList();
+    if (affected.isEmpty) return;
+
+    await _db.transaction(() async {
+      for (final track in affected) {
+        final List<String> remapped = [];
+        for (final name in track.artists) {
+          final String mapped = sources.contains(name) ? trimmedTarget : name;
+          if (!remapped.contains(mapped)) remapped.add(mapped);
+        }
+
+        await (_db.update(_db.tracks)..where((t) => t.id.equals(track.id)))
+            .write(TracksCompanion(artists: Value(remapped)));
+
+        await (_db.delete(_db.trackArtists)..where((t) => t.trackId.equals(track.id))).go();
+        await _db.batch((batch) {
+          batch.insertAll(_db.trackArtists, [
+            for (int i = 0; i < remapped.length; i++)
+              TrackArtistsCompanion.insert(trackId: track.id, artistName: remapped[i], position: i),
+          ]);
+        });
+      }
+    });
+  }
+
   /// Clé de regroupement insensible à la casse et à toute ponctuation/espace
   /// (ex. "Daft Punk", "DAFT-PUNK" et "DaftPunk" partagent la même clé
   /// "daftpunk"). Risque accepté : deux artistes réellement différents dont
