@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/audio_engine/player_controller.dart';
 import '../../../core/shared/widgets/add_to_playlist_sheet.dart';
 import '../../../core/shared/widgets/online_track_card.dart';
 import '../../../core/shared/widgets/playlist_card.dart';
@@ -19,6 +20,8 @@ import '../../playlists/data/playlist_providers.dart';
 import '../data/artist_providers.dart';
 import '../data/autocomplete_providers.dart';
 import '../data/search_providers.dart';
+import '../domain/artist_filter.dart';
+import '../domain/artist_sort.dart';
 import '../domain/autocomplete_suggestion.dart';
 import '../domain/search_result.dart';
 import '../domain/top_artist_playlist.dart';
@@ -329,25 +332,45 @@ class _SuggestionsPanel extends ConsumerWidget {
   }
 }
 
+/// Lecture immédiate d'un artiste du carrousel (Section 2) — appui simple :
+/// charge tous ses morceaux locaux (même périmètre que l'onglet "Dans ta
+/// bibliothèque" de la fiche artiste, [ArtistFilter.all]/[ArtistSort.
+/// chronological]) et démarre la lecture au premier morceau. Ne fait rien si
+/// l'artiste n'a aucun morceau local (jamais les extraits en ligne 30s, qui
+/// ne sont lus qu'à la demande explicite — voir ArtistProfileScreen). Id de
+/// playlist synthétique (aucune ligne `Playlists` correspondante, voir
+/// [TopArtistPlaylist]) : la Vibe retombe simplement sur le repli neutre
+/// (voir `activeVibeProvider`), sans incidence puisque Découverte n'a jamais
+/// d'effet sur la Vibe.
+Future<void> _playTopArtistPlaylist(BuildContext context, WidgetRef ref, TopArtistPlaylist playlist) async {
+  final List<Track> tracks = await ref.read(
+    artistTracksProvider((artistName: playlist.artistName, filter: ArtistFilter.all, sort: ArtistSort.chronological)).future,
+  );
+  if (tracks.isEmpty) return;
+  await ref.read(playerControllerProvider.notifier).playPlaylist('discovery-artist-${playlist.artistName}', tracks);
+  if (context.mounted) context.go('/player');
+}
+
 /// Carte d'une playlist auto-générée par artiste (Section 5.2) — même gabarit
 /// visuel que [PlaylistCard] (pochette carrée + titre + sous-titre), mais
-/// jamais construite à partir d'une vraie `Playlist` (voir [TopArtistPlaylist]) :
-/// le tap ouvre directement la fiche artiste (Section 5.3 — morceaux locaux +
-/// suggestions en ligne avec extraits 30s), qui fait déjà tout ce qu'une page
-/// de playlist Découverte doit montrer.
-class _TopArtistPlaylistCard extends StatelessWidget {
+/// jamais construite à partir d'une vraie `Playlist` (voir [TopArtistPlaylist]).
+/// Appui simple = lecture immédiate ([_playTopArtistPlaylist]) ; appui long =
+/// fiche artiste détaillée (Section 5.3 — morceaux locaux + suggestions en
+/// ligne avec extraits 30s), l'ancien comportement du tap simple (Section 2).
+class _TopArtistPlaylistCard extends ConsumerWidget {
   const _TopArtistPlaylistCard({required this.playlist});
 
   final TopArtistPlaylist playlist;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final String? coverPath = playlist.coverArtPath;
     return SizedBox(
       width: 152,
       child: InkWell(
         borderRadius: const BorderRadius.all(Radius.circular(AppRadii.card)),
-        onTap: () => context.push('/discovery/artist/${playlist.artistName}'),
+        onTap: () => _playTopArtistPlaylist(context, ref, playlist),
+        onLongPress: () => context.push('/discovery/artist/${playlist.artistName}'),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
