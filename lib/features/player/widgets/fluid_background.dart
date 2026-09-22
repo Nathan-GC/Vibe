@@ -236,6 +236,7 @@ class _FluidBackgroundState extends State<FluidBackground> with SingleTickerProv
             // (comportement historique) pour tous les autres presets.
             effect: widget.vibe.effect,
             isSpaceNebula: isSpaceNebula,
+            hasCoverPalette: _paletteColors != null,
             coverHidden: !widget.vibe.showCoverImage,
             backdropImage: _backdropImage,
             dummySamplerImage: _dummySamplerImage,
@@ -291,6 +292,7 @@ class _FluidPainter extends CustomPainter {
     required this.paintGradientBlobs,
     required this.effect,
     required this.isSpaceNebula,
+    required this.hasCoverPalette,
     required this.coverHidden,
     required this.backdropImage,
     required this.dummySamplerImage,
@@ -315,6 +317,13 @@ class _FluidPainter extends CustomPainter {
   // jamais superposée à un [_paintFluidBlobs] par ailleurs invisible (noir
   // sur noir).
   final bool isSpaceNebula;
+  // Space uniquement — `true` quand `colors` vient réellement de la palette
+  // extraite de la pochette (voir FluidBackground._paletteColors), plutôt
+  // que du repli `vibe.gradientColors` (noir uni, aucune pochette). Permet à
+  // [_paintNebula] de distinguer "vraie palette de pochette" de "rien à
+  // afficher" pour appliquer son propre repli indigo/violet dans ce dernier
+  // cas plutôt qu'un noir plat sans lueur.
+  final bool hasCoverPalette;
   // Retro (styleIndex 1) uniquement — voir uCoverHidden dans
   // vibe_particles.frag : pochette masquée (Section 3) = soleil repoussé
   // plus haut/réduit pour ne jamais chevaucher le bloc Titre/Artiste
@@ -416,15 +425,17 @@ class _FluidPainter extends CustomPainter {
   // Space (Section 3) : nébuleuse animée centrée autour de la pochette (elle-
   // même centrée à l'écran par MasterPlayerScreen) au lieu de l'ancien aplat
   // noir bord-à-bord — rayon plafonné à mi-distance de l'écran (`shortestSide
-  // * 0.5`), dérive douce + respiration au beat comme les autres effets, et
-  // plusieurs arrêts de couleur resserrés vers le centre pour approximer une
-  // atténuation exponentielle plutôt que le dégradé linéaire radial par
-  // défaut (qui laisserait un bord dur). `colors` vient de la palette extraite
-  // de la pochette (voir FluidBackground._maybeExtractPalette /
-  // VibeCoverPaletteUsage.ignoresCoverPalette), ou du noir de base sans
-  // pochette.
+  // * 0.5`), dérive douce + respiration au beat comme les autres effets.
+  //
+  // Bug corrigé : le fond de base remplissait TOUT le canvas avec
+  // `colors.first` (la couleur dominante extraite de la pochette) — un aplat
+  // plein écran plutôt qu'un fond spatial, et le dernier arrêt du dégradé
+  // (`Colors.transparent`) laissait alors transparaître cet aplat au lieu de
+  // vraiment s'estomper vers du noir. Le fond est maintenant TOUJOURS noir
+  // pur ; seule la lueur radiale porte la couleur, fondue jusqu'à
+  // transparence complète (donc jusqu'au noir de base) avant les bords.
   void _paintNebula(Canvas canvas, Size size) {
-    canvas.drawRect(Offset.zero & size, Paint()..color = colors.first);
+    canvas.drawRect(Offset.zero & size, Paint()..color = Colors.black);
 
     final double maxRadius = size.shortestSide * 0.5;
     final double pulseRadius = maxRadius * (0.85 + beatPhase * 0.15);
@@ -432,7 +443,14 @@ class _FluidPainter extends CustomPainter {
         Offset(math.cos(drift * 2 * math.pi), math.sin(drift * 2 * math.pi)) * size.shortestSide * 0.03;
     final Offset center = size.center(Offset.zero) + driftOffset;
 
-    final List<Color> nebulaColors = colors.length >= 2 ? colors : [...colors, ...colors];
+    // Palette de la lueur : couleurs extraites de la pochette quand
+    // disponibles (voir FluidBackground._maybeExtractPalette), sinon repli
+    // indigo/violet profond plutôt que de laisser Space totalement plat sans
+    // pochette — la nébuleuse doit toujours "respirer" un minimum.
+    final List<Color> glowColors = (hasCoverPalette && colors.length >= 2)
+        ? colors
+        : const [Color(0xFF2B0054), Color(0xFF1A0033)];
+
     canvas.drawRect(
       Offset.zero & size,
       Paint()
@@ -440,12 +458,11 @@ class _FluidPainter extends CustomPainter {
           center,
           pulseRadius,
           [
-            nebulaColors.first.withValues(alpha: 0.55),
-            nebulaColors.first.withValues(alpha: 0.30),
-            nebulaColors.last.withValues(alpha: 0.12),
+            glowColors.first.withValues(alpha: 0.55),
+            glowColors[1].withValues(alpha: 0.25),
             Colors.transparent,
           ],
-          const [0.0, 0.35, 0.7, 1.0],
+          const [0.0, 0.5, 1.0],
         ),
     );
   }
@@ -497,6 +514,7 @@ class _FluidPainter extends CustomPainter {
         oldDelegate.paintGradientBlobs != paintGradientBlobs ||
         oldDelegate.effect != effect ||
         oldDelegate.isSpaceNebula != isSpaceNebula ||
+        oldDelegate.hasCoverPalette != hasCoverPalette ||
         oldDelegate.coverHidden != coverHidden ||
         oldDelegate.backdropImage != backdropImage ||
         oldDelegate.dummySamplerImage != dummySamplerImage;
