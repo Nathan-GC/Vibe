@@ -121,28 +121,42 @@ class _TabShell extends ConsumerWidget {
 
   static const int _playerTabIndex = 1;
 
+  /// Bug critique QA ("hybrid Focus mode") : le Timer d'inactivité du Player
+  /// (MasterPlayerScreen._PlayerPageState) continue de tourner même quand cet
+  /// onglet n'est pas affiché — l'IndexedStack de StatefulShellRoute le garde
+  /// monté. Point d'entrée UNIQUE pour (ré)appliquer le mode système, appelé
+  /// EXPLICITEMENT à chaque endroit qui change soit l'onglet actif
+  /// (`goBranch`, bouton Retour) soit le mode immersif lui-même — plutôt que
+  /// de compter uniquement sur une reconstruction implicite de `build()`
+  /// (retest QA : toujours désynchronisé sur émulateur avec cette seule
+  /// approche, la cadence exacte de reconstruction de `_TabShell` au
+  /// changement d'onglet dépendant de détails internes de go_router hors de
+  /// notre contrôle). `build()` en garde tout de même un appel de secours
+  /// (idempotent côté Android) pour couvrir tout appelant qui aurait été
+  /// oublié.
+  static void _syncSystemUiMode({required bool onPlayerTab, required bool isImmersive}) {
+    SystemChrome.setEnabledSystemUIMode(
+      onPlayerTab && isImmersive ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final bool isImmersive = ref.watch(playerImmersiveModeProvider);
     final bool onPlayerTab = navigationShell.currentIndex == _playerTabIndex;
 
-    // Bug critique QA ("hybrid Focus mode") : le Timer d'inactivité du Player
-    // (MasterPlayerScreen._PlayerPageState) continue de tourner même quand cet
-    // onglet n'est pas affiché — l'IndexedStack de StatefulShellRoute le garde
-    // monté. Si le mode immersif s'active pendant que Découverte/Espace est au
-    // premier plan, puis que l'utilisateur revient sur l'onglet Lecteur (ou
-    // change d'onglet pendant qu'il est déjà actif), `playerImmersiveModeProvider`
-    // ne CHANGE pas à ce moment-là — un simple `ref.listen` sur sa transition
-    // ne suffit donc pas à réappliquer le mode système, et le tap de bascule
-    // d'onglet peut avoir entre-temps révélé la barre de navigation Android
-    // (comportement `immersiveSticky` normal), qui restait alors visible
-    // indéfiniment pendant que l'UI in-app restait masquée. Réappliquer ici,
-    // à CHAQUE reconstruction de la coque (changement d'onglet OU changement
-    // du provider, les deux redéclenchent ce build), élimine la désync —
-    // l'appel est idempotent côté Android.
-    SystemChrome.setEnabledSystemUIMode(
-      onPlayerTab && isImmersive ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
-    );
+    // Déclencheur 1 : le mode immersif change SANS changement d'onglet
+    // (entrée automatique après inactivité pendant qu'on est déjà sur
+    // Lecteur, ou sortie par tap) — réagit précisément à ce changement de
+    // valeur plutôt que d'attendre la prochaine reconstruction.
+    ref.listen<bool>(playerImmersiveModeProvider, (previous, next) {
+      _syncSystemUiMode(onPlayerTab: navigationShell.currentIndex == _playerTabIndex, isImmersive: next);
+    });
+
+    // Déclencheur 2 (filet de sécurité) : réapplique aussi le mode courant à
+    // chaque reconstruction de la coque, au cas où go_router en déclencherait
+    // une sans que les déclencheurs explicites ci-dessous n'aient encore agi.
+    _syncSystemUiMode(onPlayerTab: onPlayerTab, isImmersive: isImmersive);
 
     return PopScope(
       canPop: false,
@@ -150,11 +164,15 @@ class _TabShell extends ConsumerWidget {
         if (didPop) return;
         if (!onPlayerTab) {
           navigationShell.goBranch(_playerTabIndex);
+          // Déclencheur 3 : retour vers l'onglet Lecteur depuis le bouton
+          // Retour Android — réapplique immédiatement plutôt que de compter
+          // sur une reconstruction ultérieure de `_TabShell`.
+          _syncSystemUiMode(onPlayerTab: true, isImmersive: ref.read(playerImmersiveModeProvider));
           return;
         }
         if (isImmersive) {
           ref.read(playerImmersiveModeProvider.notifier).set(false);
-          SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+          _syncSystemUiMode(onPlayerTab: true, isImmersive: false);
           return;
         }
         SystemNavigator.pop();
@@ -165,7 +183,18 @@ class _TabShell extends ConsumerWidget {
           bottom: true,
           child: NavigationBar(
             selectedIndex: navigationShell.currentIndex,
-            onDestinationSelected: navigationShell.goBranch,
+            onDestinationSelected: (index) {
+              navigationShell.goBranch(index);
+              // Déclencheur 4 : bascule d'onglet via la barre de navigation —
+              // le point d'entrée le plus courant pour "revenir sur l'onglet
+              // Lecteur en mode Focus" (retest QA), réappliqué explicitement
+              // ici plutôt que supposé couvert par une reconstruction
+              // implicite de `_TabShell`.
+              _syncSystemUiMode(
+                onPlayerTab: index == _playerTabIndex,
+                isImmersive: ref.read(playerImmersiveModeProvider),
+              );
+            },
             destinations: const [
               NavigationDestination(
                 icon: Icon(Icons.explore_outlined),
