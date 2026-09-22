@@ -28,6 +28,18 @@ Future<void> main() async {
   // Attention, `notificationColor` est fixé une fois pour toutes ici : l'API
   // Android ne permet pas de la reteindre dynamiquement selon la Vibe active
   // en cours de lecture (voir PlaylistAudioHandler).
+  //
+  // Stabilité en arrière-plan sur les morceaux longs (Section 5) :
+  // `androidNotificationOngoing: true` est ce qui garde le service audio de
+  // premier plan (et son wakelock, voir AndroidManifest.xml — WAKE_LOCK,
+  // FOREGROUND_SERVICE, FOREGROUND_SERVICE_MEDIA_PLAYBACK) actif pendant une
+  // pause plutôt que de le laisser passer en priorité basse, où Android peut
+  // le tuer en Doze. `androidStopForegroundOnPause` reste volontairement à
+  // sa valeur par défaut (`true`) : `audio_service` lève une assertion dès
+  // la construction si `androidNotificationOngoing: true` est combiné à
+  // `androidStopForegroundOnPause: false` (le premier n'a d'effet que si le
+  // second reste `true` — voir AudioServiceConfigMessage), donc les deux ne
+  // peuvent pas être ajustés indépendamment ici.
   await AudioService.init(
     builder: () => PlaylistAudioHandler(container),
     config: const AudioServiceConfig(
