@@ -16,11 +16,7 @@ import 'vibe_engine.dart';
 /// fond, cartes, barre de navigation — sur les 3 tabs. Le fond Fluid du
 /// Player reste une couche additionnelle, plus élaborée, propre à cet écran.
 final Provider<VibeVisual> activeVibeProvider = Provider<VibeVisual>((ref) {
-  final Color userAccent = ref.watch(userAccentColorProvider);
-  final VibeVisual defaultVibe = VibeVisual(
-    gradientColors: [Color.alphaBlend(userAccent.withValues(alpha: 0.12), const Color(0xFFF5F5F5)), const Color(0xFFE0E0E0)],
-    accentColor: userAccent,
-  );
+  final VibeVisual defaultVibe = defaultVibeFor(ref.watch(userAccentColorProvider));
 
   final PlayerSnapshot player = ref.watch(playerControllerProvider);
   final String? playlistId = player.currentPlaylistId;
@@ -29,3 +25,17 @@ final Provider<VibeVisual> activeVibeProvider = Provider<VibeVisual>((ref) {
   final AsyncValue<Playlist?> playlist = ref.watch(playlistByIdProvider(playlistId));
   return playlist.value?.resolvedVibe ?? defaultVibe;
 });
+
+/// Repli neutre partagé — playlist non résolue (aucune en cours, ou pas
+/// encore chargée depuis Drift) : la couleur d'accent choisie par
+/// l'utilisateur (Réglages), jamais une teinte figée sans rapport. Utilisé
+/// à la fois ici et par MasterPlayerScreen (qui a besoin de la même valeur
+/// avant que `activeVibeProvider` lui-même n'ait pu se recalculer, dans son
+/// propre `build()`) — voir bug critique QA (Vibe Engine après redémarrage à
+/// froid), où un `black87` codé en dur y remplaçait par erreur ce repli.
+VibeVisual defaultVibeFor(Color userAccent) {
+  return VibeVisual(
+    gradientColors: [Color.alphaBlend(userAccent.withValues(alpha: 0.12), const Color(0xFFF5F5F5)), const Color(0xFFE0E0E0)],
+    accentColor: userAccent,
+  );
+}

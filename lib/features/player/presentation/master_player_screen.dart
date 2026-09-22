@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -11,6 +10,8 @@ import '../../../core/audio_engine/player_controller.dart';
 import '../../../core/audio_engine/player_immersive_mode_provider.dart';
 import '../../../core/shared/widgets/add_to_playlist_sheet.dart';
 import '../../../core/storage/database/app_database.dart';
+import '../../../core/theme/global_theme/global_theme.dart';
+import '../../../core/theme/vibe_engine/active_vibe_provider.dart';
 import '../../../core/theme/vibe_engine/animated_vibe_theme.dart';
 import '../../../core/theme/vibe_engine/playlist_vibe_resolver.dart';
 import '../../../core/theme/vibe_engine/vibe_engine.dart';
@@ -80,10 +81,11 @@ class _MasterPlayerScreenState extends ConsumerState<MasterPlayerScreen>
     final AsyncValue<Playlist?> playlist = playlistId == null
         ? const AsyncValue.data(null)
         : ref.watch(playlistByIdProvider(playlistId));
-    final VibeVisual vibe = playlist.value?.resolvedVibe ??
-        const VibeVisual(
-            gradientColors: [Color(0xFFF5F5F5), Color(0xFFE0E0E0)],
-            accentColor: Colors.black87);
+    // Repli (playlist non résolue, ex. bref chargement après restauration à
+    // froid, bug critique QA) : même repli neutre que `activeVibeProvider`
+    // (couleur d'accent choisie par l'utilisateur en Réglages), pas un noir
+    // figé (`black87`) sans rapport — voir [defaultVibeFor].
+    final VibeVisual vibe = playlist.value?.resolvedVibe ?? defaultVibeFor(ref.watch(userAccentColorProvider));
 
     final Track? track = player.currentTrack;
     final String? playlistCoverImagePath = playlist.value?.coverImagePath;
@@ -257,13 +259,17 @@ class _PlayerPageState extends ConsumerState<_PlayerPage>
         widget.player.currentTrack == null) {
       return;
     }
-    ref.read(playerImmersiveModeProvider.notifier).set(true);
     // Ergonomie navigation Android (2.A) : masque aussi la barre système
-    // (statut + navigation), pas seulement les contrôles in-app — restauré
-    // dans le `ref.listen` du `build()` ci-dessous, seul point qui sait que
-    // le mode immersif vient de se terminer, qu'il ait été quitté depuis
-    // l'intérieur (tap) ou depuis l'extérieur (bouton Retour, `_TabShell`).
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    // (statut + navigation), pas seulement les contrôles in-app. Le
+    // `SystemChrome.setEnabledSystemUIMode` correspondant n'est PAS appelé
+    // ici (bug critique QA "hybrid Focus mode" corrigé) : ce Timer continue
+    // de tourner même quand cet onglet n'est pas affiché (IndexedStack le
+    // garde monté), donc appeler l'API système depuis ici pendant que
+    // Découverte/Espace est au premier plan modifierait la barre système du
+    // MAUVAIS onglet. `_TabShell` (router.dart) réapplique désormais le mode
+    // système à chaque reconstruction de la coque, en fonction de l'onglet
+    // réellement affiché — seul point qui sait ça de manière fiable.
+    ref.read(playerImmersiveModeProvider.notifier).set(true);
   }
 
   void _exitImmersive() {
@@ -281,16 +287,13 @@ class _PlayerPageState extends ConsumerState<_PlayerPage>
   @override
   Widget build(BuildContext context) {
     final bool immersive = ref.watch(playerImmersiveModeProvider);
-    // Restaure la barre système (statut + navigation) dès que le mode
-    // immersif se termine, qu'il ait été quitté depuis l'intérieur (tap,
-    // voir _exitImmersive) ou depuis l'extérieur (bouton Retour Android,
-    // voir _TabShell dans router.dart) — un seul point de restauration
-    // plutôt que de dupliquer l'appel SystemChrome à chaque appelant.
+    // Relance le minuteur d'inactivité dès que le mode immersif se termine,
+    // qu'il ait été quitté depuis l'intérieur (tap, voir _exitImmersive) ou
+    // depuis l'extérieur (bouton Retour Android, voir _TabShell dans
+    // router.dart). La restauration de la barre système, elle, est centralisée
+    // dans `_TabShell` (voir _enterImmersive ci-dessus) plutôt que dupliquée ici.
     ref.listen<bool>(playerImmersiveModeProvider, (previous, next) {
-      if (previous == true && next == false) {
-        SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-        _scheduleInactivity();
-      }
+      if (previous == true && next == false) _scheduleInactivity();
     });
 
     final Track? track = widget.player.currentTrack;
@@ -357,7 +360,15 @@ class _PlayerPageState extends ConsumerState<_PlayerPage>
                       constraints:
                           BoxConstraints(minHeight: constraints.maxHeight),
                       child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                        // QA Section 2.C : sans pochette, les 2 blocs restants
+                        // (Titre/Artiste, Contrôles) sont bien plus courts que
+                        // l'espace disponible — `center` les regroupe alors en
+                        // un pavé compact au milieu de l'écran, avec un grand
+                        // vide en dessous. `spaceEvenly` les répartit sur toute
+                        // la hauteur disponible à la place.
+                        mainAxisAlignment: showCover
+                            ? MainAxisAlignment.center
+                            : MainAxisAlignment.spaceEvenly,
                         children: [
                           if (showCover) ...[
                             albumArt,
@@ -374,17 +385,32 @@ class _PlayerPageState extends ConsumerState<_PlayerPage>
                               ignoring: immersive && !isNewOledFocus,
                               child: Column(
                                 children: [
+                                  // QA Section 2.B/2.C : teintés à
+                                  // `vibe.accentColor` (illisibles sur les
+                                  // Vibes sombres avec le style ambiant par
+                                  // défaut) et tronqués sur une ligne (comme
+                                  // QueueScreen/PersonalSpaceScreen) plutôt
+                                  // que de déborder sur un titre/artiste long.
                                   Text(
                                     track?.title ?? 'Aucune lecture',
-                                    style:
-                                        Theme.of(context).textTheme.titleLarge,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleLarge
+                                        ?.copyWith(color: vibe.accentColor),
                                     textAlign: TextAlign.center,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
                                     track?.artists.join(', ') ?? '',
-                                    style:
-                                        Theme.of(context).textTheme.bodyMedium,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(color: vibe.accentColor),
+                                    textAlign: TextAlign.center,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ],
                               ),

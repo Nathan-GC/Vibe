@@ -126,6 +126,24 @@ class _TabShell extends ConsumerWidget {
     final bool isImmersive = ref.watch(playerImmersiveModeProvider);
     final bool onPlayerTab = navigationShell.currentIndex == _playerTabIndex;
 
+    // Bug critique QA ("hybrid Focus mode") : le Timer d'inactivité du Player
+    // (MasterPlayerScreen._PlayerPageState) continue de tourner même quand cet
+    // onglet n'est pas affiché — l'IndexedStack de StatefulShellRoute le garde
+    // monté. Si le mode immersif s'active pendant que Découverte/Espace est au
+    // premier plan, puis que l'utilisateur revient sur l'onglet Lecteur (ou
+    // change d'onglet pendant qu'il est déjà actif), `playerImmersiveModeProvider`
+    // ne CHANGE pas à ce moment-là — un simple `ref.listen` sur sa transition
+    // ne suffit donc pas à réappliquer le mode système, et le tap de bascule
+    // d'onglet peut avoir entre-temps révélé la barre de navigation Android
+    // (comportement `immersiveSticky` normal), qui restait alors visible
+    // indéfiniment pendant que l'UI in-app restait masquée. Réappliquer ici,
+    // à CHAQUE reconstruction de la coque (changement d'onglet OU changement
+    // du provider, les deux redéclenchent ce build), élimine la désync —
+    // l'appel est idempotent côté Android.
+    SystemChrome.setEnabledSystemUIMode(
+      onPlayerTab && isImmersive ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
+    );
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (bool didPop, Object? result) {

@@ -238,7 +238,11 @@ class PlayerController extends _$PlayerController {
       state = state.copyWith(status: PlaybackStatus.playing, currentTrack: track, currentPlaylistId: playlistId);
       unawaited(_player.play());
 
-      unawaited(_storage.save(queueTrackIds: tracks.map((t) => t.id).toList(), currentIndex: index));
+      unawaited(_storage.save(
+        queueTrackIds: tracks.map((t) => t.id).toList(),
+        currentIndex: index,
+        currentPlaylistId: state.currentPlaylistId,
+      ));
       unawaited(ref.read(trackRepositoryProvider).recordPlay(track.id));
       return;
     }
@@ -333,7 +337,12 @@ class PlayerController extends _$PlayerController {
     // lèverait sinon une exception.
     if (!ref.mounted) return;
     _currentIndex = index;
-    state = PlayerSnapshot(status: PlaybackStatus.paused, currentTrack: track);
+    // `currentPlaylistId` restauré ici (Bug critique QA, cold restart) : sans
+    // lui, MasterPlayerScreen/activeVibeProvider ne retrouvaient jamais la
+    // playlist active après un force-stop/relance et retombaient
+    // indéfiniment sur leur repli neutre (dégradé gris, accentColor black87)
+    // au lieu de la Vibe réellement configurée.
+    state = PlayerSnapshot(status: PlaybackStatus.paused, currentTrack: track, currentPlaylistId: persisted.currentPlaylistId);
   }
 }
 
