@@ -44,6 +44,7 @@ class VibeHapticService {
       case VibePreset.minimal:
       case VibePreset.glassmorphism:
       case VibePreset.custom:
+      case VibePreset.newOled:
       case null:
         // Presets non couverts explicitement par le cahier des charges —
         // repli neutre plutôt que de ne rien jouer du tout.

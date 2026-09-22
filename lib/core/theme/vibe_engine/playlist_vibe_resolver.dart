@@ -11,7 +11,12 @@ import 'vibe_engine.dart';
 extension PlaylistVibeResolver on Playlist {
   VibeVisual get resolvedVibe {
     if (vibeStyle != VibePreset.custom) {
-      return VibeVisual(gradientColors: vibeStyle.gradientColors, accentColor: vibeStyle.accentColor, preset: vibeStyle);
+      return VibeVisual(
+        gradientColors: vibeStyle.gradientColors,
+        accentColor: vibeStyle.accentColor,
+        preset: vibeStyle,
+        showCoverImage: showCoverImage,
+      );
     }
 
     final List<Color> customColors = bgColors.map(_colorFromHex).whereType<Color>().toList();
@@ -27,6 +32,7 @@ extension PlaylistVibeResolver on Playlist {
       preset: VibePreset.custom,
       effect: customEffect,
       customBackgroundVideoPath: customBackgroundVideoPath.isEmpty ? null : customBackgroundVideoPath,
+      showCoverImage: showCoverImage,
     );
   }
 }

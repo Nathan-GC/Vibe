@@ -136,6 +136,12 @@ class DriftPlaylistRepository implements PlaylistRepository {
   }
 
   @override
+  Future<void> updateShowCoverImage(String playlistId, bool showCoverImage) {
+    return (_db.update(_db.playlists)..where((p) => p.id.equals(playlistId)))
+        .write(PlaylistsCompanion(showCoverImage: Value(showCoverImage)));
+  }
+
+  @override
   Future<void> renamePlaylist(String playlistId, String title) {
     return (_db.update(_db.playlists)..where((p) => p.id.equals(playlistId)))
         .write(PlaylistsCompanion(title: Value(title)));

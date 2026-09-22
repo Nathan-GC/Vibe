@@ -35,26 +35,42 @@ class VibeCustomizerScreen extends ConsumerWidget {
             children: [
               ...VibePreset.values.where((preset) => preset != VibePreset.custom).map((preset) {
                 final bool isSelected = preset == current;
+                // Section 3 : pochette masquable pour New OLED/Neon/Retro
+                // (Custom a son propre bloc, voir _CustomVibeEditor) — n'a de
+                // sens que pour le preset réellement actif de la playlist.
+                final bool showCoverToggle =
+                    isSelected && preset.exposesCoverToggle;
                 return Card(
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                     side: isSelected ? BorderSide(color: preset.accentColor, width: 2) : BorderSide.none,
                   ),
-                  child: ListTile(
-                    leading: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(colors: preset.gradientColors),
-                        shape: BoxShape.circle,
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(colors: preset.gradientColors),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        title: Text(preset.label),
+                        trailing: isSelected ? Icon(Icons.check, color: preset.accentColor) : null,
+                        onTap: () {
+                          VibeHapticService.triggerForPreset(preset, VibeInteraction.vibeSelect);
+                          ref.read(playlistRepositoryProvider).updateVibeStyle(playlistId, preset);
+                        },
                       ),
-                    ),
-                    title: Text(preset.label),
-                    trailing: isSelected ? Icon(Icons.check, color: preset.accentColor) : null,
-                    onTap: () {
-                      VibeHapticService.triggerForPreset(preset, VibeInteraction.vibeSelect);
-                      ref.read(playlistRepositoryProvider).updateVibeStyle(playlistId, preset);
-                    },
+                      if (showCoverToggle)
+                        SwitchListTile(
+                          title: const Text('Afficher la pochette'),
+                          value: data.showCoverImage,
+                          onChanged: (value) =>
+                              ref.read(playlistRepositoryProvider).updateShowCoverImage(playlistId, value),
+                        ),
+                    ],
                   ),
                 );
               }),
@@ -113,6 +129,7 @@ class _CustomVibeEditorState extends ConsumerState<_CustomVibeEditor> {
   late List<Color> _selectedColors;
   late Color _selectedAccentColor;
   late VibeCustomEffect _selectedEffect;
+  late bool _showCoverImage;
   String? _pendingImagePath;
   bool _clearImage = false;
   String? _pendingVideoPath;
@@ -131,6 +148,7 @@ class _CustomVibeEditorState extends ConsumerState<_CustomVibeEditor> {
         : [_swatchChoices[0], _swatchChoices[5]];
     _selectedAccentColor = current.accentColor;
     _selectedEffect = current.effect;
+    _showCoverImage = widget.playlist.showCoverImage;
   }
 
   @override
@@ -357,6 +375,15 @@ class _CustomVibeEditorState extends ConsumerState<_CustomVibeEditor> {
               selected: {_selectedEffect},
               showSelectedIcon: false,
               onSelectionChanged: (selection) => setState(() => _selectedEffect = selection.first),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Afficher la pochette'),
+              value: _showCoverImage,
+              onChanged: (value) {
+                setState(() => _showCoverImage = value);
+                ref.read(playlistRepositoryProvider).updateShowCoverImage(widget.playlistId, value);
+              },
             ),
             const SizedBox(height: 16),
             Row(

@@ -73,4 +73,9 @@ abstract class PlaylistRepository {
   /// l'éditeur de playlist. [path] vide retire la pochette personnalisée et
   /// revient au visuel composite auto-généré (voir PlaylistCoverImage).
   Future<void> updateCoverImagePath(String playlistId, String path);
+
+  /// Visibilité de la pochette dans le Player (Section 3) — exposé dans
+  /// VibeCustomizerScreen pour Custom/New OLED/Neon/Retro uniquement, mais
+  /// applicable à n'importe quelle playlist.
+  Future<void> updateShowCoverImage(String playlistId, bool showCoverImage);
 }

@@ -197,6 +197,10 @@ class Playlists extends Table {
   // quand renseignée (voir MasterPlayerScreen) : mutuellement exclusive avec
   // `customEffect`/`customBackgroundImagePath`, jamais superposée.
   TextColumn get customBackgroundVideoPath => text().withDefault(const Constant(''))();
+  // Pochette masquable dans le Player (Section 3, `VibePreset.custom`/
+  // `newOled`/`neon`/`retro` uniquement — voir VibeCustomizerScreen) : par
+  // défaut visible (`true`) pour tout le reste, jamais exposé ailleurs.
+  BoolColumn get showCoverImage => boolean().withDefault(const Constant(true))();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -222,7 +226,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 10;
+  int get schemaVersion => 11;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -281,6 +285,9 @@ class AppDatabase extends _$AppDatabase {
             await customStatement(
               "UPDATE tracks SET enrichment_status = 'needsManualReview' WHERE enrichment_status = 'failedPermanently'",
             );
+          }
+          if (from < 11) {
+            await m.addColumn(playlists, playlists.showCoverImage);
           }
         },
       );

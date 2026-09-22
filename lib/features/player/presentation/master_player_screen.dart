@@ -208,7 +208,9 @@ class _PlayerPage extends ConsumerStatefulWidget {
 /// le forcer à `false` depuis le bouton Retour Android (Section 2.B).
 class _PlayerPageState extends ConsumerState<_PlayerPage>
     with SingleTickerProviderStateMixin {
-  static const Duration _inactivityDelay = Duration(seconds: 15);
+  // Section 3 : 7s (au lieu des 15s précédentes) avant le passage automatique
+  // en mode Canvas/Focus.
+  static const Duration _inactivityDelay = Duration(seconds: 7);
   static const Duration _fadeDuration = Duration(milliseconds: 1500);
 
   Timer? _inactivityTimer;
@@ -294,6 +296,15 @@ class _PlayerPageState extends ConsumerState<_PlayerPage>
     final Track? track = widget.player.currentTrack;
     final bool isPlaying = widget.player.status == PlaybackStatus.playing;
     final VibeVisual vibe = widget.vibe;
+    // Section 3 : pochette masquable (Custom/New OLED/Neon/Retro, voir
+    // VibeCustomizerScreen) — quand masquée, le reste du contenu se recentre
+    // naturellement dans la Column (mainAxisAlignment.center ci-dessous) sans
+    // laisser d'espace vide à sa place.
+    final bool showCover = vibe.showCoverImage;
+    // New OLED (Section 3) : seul preset dont le Focus Mode garde Titre/
+    // Artiste visibles, directement sous la pochette, au lieu de la légende
+    // en bas d'écran (_ImmersiveCaption) des autres Vibes.
+    final bool isNewOledFocus = immersive && vibe.preset == VibePreset.newOled;
     // Section 3.2 : repli sur la pochette de la playlist en cours quand le
     // morceau n'en a pas de dédiée — les deux champs partagent la même
     // convention "vide = absente" (voir Tracks.coverArtPath, Playlists.
@@ -348,14 +359,19 @@ class _PlayerPageState extends ConsumerState<_PlayerPage>
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          albumArt,
-                          const SizedBox(height: 24),
+                          if (showCover) ...[
+                            albumArt,
+                            const SizedBox(height: 24),
+                          ],
+                          // Titre/Artiste : masqués comme le reste en Focus
+                          // Mode standard, mais laissés visibles pour New OLED
+                          // (isNewOledFocus), directement sous la pochette.
                           AnimatedOpacity(
-                            opacity: immersive ? 0 : 1,
+                            opacity: (immersive && !isNewOledFocus) ? 0 : 1,
                             duration: _fadeDuration,
                             curve: Curves.easeInOut,
                             child: IgnorePointer(
-                              ignoring: immersive,
+                              ignoring: immersive && !isNewOledFocus,
                               child: Column(
                                 children: [
                                   Text(
@@ -370,6 +386,21 @@ class _PlayerPageState extends ConsumerState<_PlayerPage>
                                     style:
                                         Theme.of(context).textTheme.bodyMedium,
                                   ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          // Barre de progression/contrôles/actions : masqués
+                          // en Focus Mode pour toutes les Vibes sans exception,
+                          // y compris New OLED.
+                          AnimatedOpacity(
+                            opacity: immersive ? 0 : 1,
+                            duration: _fadeDuration,
+                            curve: Curves.easeInOut,
+                            child: IgnorePointer(
+                              ignoring: immersive,
+                              child: Column(
+                                children: [
                                   const SizedBox(height: 16),
                                   ProgressSlider(
                                     fallbackDuration:
@@ -414,15 +445,17 @@ class _PlayerPageState extends ConsumerState<_PlayerPage>
               ),
             ),
             // Titre/artiste/année minimalistes du mode Canvas — seulement
-            // visibles (et interactifs) en immersion.
+            // visibles (et interactifs) en immersion. Absent en Focus Mode
+            // New OLED (isNewOledFocus) : Titre/Artiste y restent affichés
+            // directement sous la pochette à la place (voir plus haut).
             Positioned(
               left: 0,
               right: 0,
               bottom: 32,
               child: IgnorePointer(
-                ignoring: !immersive,
+                ignoring: !immersive || isNewOledFocus,
                 child: AnimatedOpacity(
-                  opacity: immersive ? 1 : 0,
+                  opacity: (immersive && !isNewOledFocus) ? 1 : 0,
                   duration: _fadeDuration,
                   curve: Curves.easeInOut,
                   child: _ImmersiveCaption(

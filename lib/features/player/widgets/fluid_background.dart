@@ -201,8 +201,14 @@ class _FluidBackgroundState extends State<FluidBackground> with SingleTickerProv
   @override
   Widget build(BuildContext context) {
     final bool isNeon = widget.vibe.preset == VibePreset.neon;
-    final List<Color> colors = _paletteColors ?? widget.vibe.gradientColors;
+    // Section 3 : la pochette en cours ne doit plus teinter le fond de la
+    // plupart des presets (voir VibeCoverPaletteUsage.ignoresCoverPalette) —
+    // Space (`oled`) reste la seule exception, sa nébuleuse étant justement
+    // construite à partir de cette palette (voir _paintNebula ci-dessous).
+    final bool ignoresCoverPalette = widget.vibe.preset?.ignoresCoverPalette ?? false;
+    final List<Color> colors = ignoresCoverPalette ? widget.vibe.gradientColors : (_paletteColors ?? widget.vibe.gradientColors);
     final int? particleStyle = widget.vibe.preset?.particleStyleIndex;
+    final bool isSpaceNebula = widget.vibe.preset == VibePreset.oled;
 
     return AnimatedBuilder(
       animation: Listenable.merge([widget.tempoController, _driftController]),
@@ -229,6 +235,7 @@ class _FluidBackgroundState extends State<FluidBackground> with SingleTickerProv
             // Effet propre à VibePreset.custom (Section 4.2) — VibeCustomEffect.fluid
             // (comportement historique) pour tous les autres presets.
             effect: widget.vibe.effect,
+            isSpaceNebula: isSpaceNebula,
             backdropImage: _backdropImage,
             dummySamplerImage: _dummySamplerImage,
           ),
@@ -282,6 +289,7 @@ class _FluidPainter extends CustomPainter {
     required this.shaderStyle,
     required this.paintGradientBlobs,
     required this.effect,
+    required this.isSpaceNebula,
     required this.backdropImage,
     required this.dummySamplerImage,
   });
@@ -300,6 +308,11 @@ class _FluidPainter extends CustomPainter {
   final bool paintGradientBlobs;
   // Choix de rendu quand [paintGradientBlobs] est vrai — voir [VibeCustomEffect].
   final VibeCustomEffect effect;
+  // Space (`VibePreset.oled`, Section 3) : remplace le rendu habituel de
+  // [effect] par [_paintNebula] — la nébuleuse EST le fond de ce preset,
+  // jamais superposée à un [_paintFluidBlobs] par ailleurs invisible (noir
+  // sur noir).
+  final bool isSpaceNebula;
   // Vibe Neon (styleIndex 0) uniquement : texture échantillonnée par le
   // shader lui-même pour la réfraction des gouttes et la détection des
   // zones néon (uBackdrop) — voir vibe_particles.frag. `dummySamplerImage`
@@ -310,13 +323,17 @@ class _FluidPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (paintGradientBlobs) {
-      switch (effect) {
-        case VibeCustomEffect.fluid:
-          _paintFluidBlobs(canvas, size);
-        case VibeCustomEffect.animatedGradient:
-          _paintAnimatedGradient(canvas, size);
-        case VibeCustomEffect.radiation:
-          _paintRadiation(canvas, size);
+      if (isSpaceNebula) {
+        _paintNebula(canvas, size);
+      } else {
+        switch (effect) {
+          case VibeCustomEffect.fluid:
+            _paintFluidBlobs(canvas, size);
+          case VibeCustomEffect.animatedGradient:
+            _paintAnimatedGradient(canvas, size);
+          case VibeCustomEffect.radiation:
+            _paintRadiation(canvas, size);
+        }
       }
     }
 
@@ -388,6 +405,43 @@ class _FluidPainter extends CustomPainter {
     );
   }
 
+  // Space (Section 3) : nébuleuse animée centrée autour de la pochette (elle-
+  // même centrée à l'écran par MasterPlayerScreen) au lieu de l'ancien aplat
+  // noir bord-à-bord — rayon plafonné à mi-distance de l'écran (`shortestSide
+  // * 0.5`), dérive douce + respiration au beat comme les autres effets, et
+  // plusieurs arrêts de couleur resserrés vers le centre pour approximer une
+  // atténuation exponentielle plutôt que le dégradé linéaire radial par
+  // défaut (qui laisserait un bord dur). `colors` vient de la palette extraite
+  // de la pochette (voir FluidBackground._maybeExtractPalette /
+  // VibeCoverPaletteUsage.ignoresCoverPalette), ou du noir de base sans
+  // pochette.
+  void _paintNebula(Canvas canvas, Size size) {
+    canvas.drawRect(Offset.zero & size, Paint()..color = colors.first);
+
+    final double maxRadius = size.shortestSide * 0.5;
+    final double pulseRadius = maxRadius * (0.85 + beatPhase * 0.15);
+    final Offset driftOffset =
+        Offset(math.cos(drift * 2 * math.pi), math.sin(drift * 2 * math.pi)) * size.shortestSide * 0.03;
+    final Offset center = size.center(Offset.zero) + driftOffset;
+
+    final List<Color> nebulaColors = colors.length >= 2 ? colors : [...colors, ...colors];
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          center,
+          pulseRadius,
+          [
+            nebulaColors.first.withValues(alpha: 0.55),
+            nebulaColors.first.withValues(alpha: 0.30),
+            nebulaColors.last.withValues(alpha: 0.12),
+            Colors.transparent,
+          ],
+          const [0.0, 0.35, 0.7, 1.0],
+        ),
+    );
+  }
+
   // Section 4.2 "Radiation" : rayons flous qui partent du centre vers les
   // bords, tournant lentement et s'allongeant/rétrécissant au rythme du beat.
   void _paintRadiation(Canvas canvas, Size size) {
@@ -434,6 +488,7 @@ class _FluidPainter extends CustomPainter {
         oldDelegate.shaderAccentColor != shaderAccentColor ||
         oldDelegate.paintGradientBlobs != paintGradientBlobs ||
         oldDelegate.effect != effect ||
+        oldDelegate.isSpaceNebula != isSpaceNebula ||
         oldDelegate.backdropImage != backdropImage ||
         oldDelegate.dummySamplerImage != dummySamplerImage;
   }

@@ -4,7 +4,12 @@ import 'package:flutter/material.dart';
 /// Les noms correspondent exactement aux valeurs stockées en base (`playlists.vibe_style`).
 /// `custom` délègue son rendu aux champs `bgColors` / `customBackgroundImagePath`
 /// de la playlist plutôt qu'à une palette fixe — voir [PlaylistVibeResolver].
-enum VibePreset { minimal, neon, glassmorphism, retro, organic, oled, custom }
+/// `oled` reste ce nom en base pour ne rien casser des playlists existantes
+/// (voir [VibePresetStyle.label]) malgré son renommage utilisateur en "Space"
+/// (Section 3) ; `newOled` est un preset distinct ajouté par cette même
+/// section, volontairement séparé plutôt que de réutiliser `oled` : les deux
+/// ont désormais des rendus différents (nébuleuse animée vs noir pur figé).
+enum VibePreset { minimal, neon, glassmorphism, retro, organic, oled, custom, newOled }
 
 class VibeTheme extends ThemeExtension<VibeTheme> {
   const VibeTheme({required this.preset, required this.gradientColors, required this.accentColor});
@@ -57,10 +62,17 @@ extension VibePresetStyle on VibePreset {
         // (styleIndex 2) doivent se détacher d'un fond sombre et mystérieux,
         // pas rivaliser avec lui.
         VibePreset.organic => const [Color(0xFF040B06), Color(0xFF15311F)],
+        // Space (ex-OLED, Section 3) : base toujours noire — la nébuleuse
+        // animée autour de la pochette (voir FluidBackground._paintNebula)
+        // vient se superposer par-dessus, jamais remplacer ce noir de base.
         VibePreset.oled => const [Colors.black, Colors.black],
         // Repli tant que la playlist n'a pas encore de couleurs personnalisées
         // enregistrées (juste après le passage sur "Personnalisé").
         VibePreset.custom => const [Color(0xFF3A3A3A), Color(0xFF1A1A1A)],
+        // New OLED (Section 3) : noir pur figé, sans nébuleuse ni palette de
+        // pochette (voir VibeCoverPaletteUsage.ignoresCoverPalette) —
+        // contrairement à Space, qui lui reflète la pochette en cours.
+        VibePreset.newOled => const [Colors.black, Colors.black],
       };
 
   Color get accentColor => switch (this) {
@@ -75,16 +87,53 @@ extension VibePresetStyle on VibePreset {
         VibePreset.organic => const Color(0xFF5CDB7A),
         VibePreset.oled => Colors.white,
         VibePreset.custom => Colors.white,
+        VibePreset.newOled => Colors.white,
       };
 
+  // "Space" (Section 3) : renommage utilisateur de l'ancien "OLED" — le nom
+  // Dart/la valeur stockée en base restent `oled` (voir doc de [VibePreset]).
   String get label => switch (this) {
         VibePreset.minimal => 'Minimal',
         VibePreset.neon => 'Neon',
         VibePreset.glassmorphism => 'Glassmorphism',
         VibePreset.retro => 'Retro',
         VibePreset.organic => 'Organic',
-        VibePreset.oled => 'OLED',
+        VibePreset.oled => 'Space',
         VibePreset.custom => 'Personnalisé',
+        VibePreset.newOled => 'New OLED',
+      };
+}
+
+/// Section 3 : ces presets ont une identité de couleur figée (palette du
+/// preset) ou choisie explicitement par l'utilisateur (Custom) — la pochette
+/// en cours de lecture ne doit plus jamais la reteindre (bug remonté : un
+/// Custom savamment choisi se faisait recouvrir par la pochette dès qu'elle
+/// avait une couleur dominante). `oled` (Space) est l'exception volontaire :
+/// sa nébuleuse EST construite à partir de la pochette (voir
+/// FluidBackground._maybeExtractPalette/._paintNebula). `glassmorphism` garde
+/// son comportement historique (non concerné par cette section) ; `newOled`
+/// suit les presets figés : son identité noir pur ne dépend jamais non plus
+/// de la pochette.
+extension VibeCoverPaletteUsage on VibePreset {
+  bool get ignoresCoverPalette => switch (this) {
+        VibePreset.minimal ||
+        VibePreset.neon ||
+        VibePreset.retro ||
+        VibePreset.organic ||
+        VibePreset.custom ||
+        VibePreset.newOled =>
+          true,
+        VibePreset.glassmorphism || VibePreset.oled => false,
+      };
+}
+
+/// Presets exposant le bouton "Afficher la pochette" (Section 3) dans
+/// VibeCustomizerScreen — les autres gardent toujours leur pochette visible,
+/// sans réglage proposé.
+extension VibeCoverToggleAvailability on VibePreset {
+  bool get exposesCoverToggle => switch (this) {
+        VibePreset.custom || VibePreset.newOled || VibePreset.neon || VibePreset.retro => true,
+        VibePreset.minimal || VibePreset.glassmorphism || VibePreset.organic || VibePreset.oled => false,
       };
 }
 
@@ -101,8 +150,11 @@ extension VibeParticleStyle on VibePreset {
         VibePreset.organic => 2,
         VibePreset.oled => 3,
         // Pas d'effet dédié : le dégradé de FluidBackground suffit, inutile
-        // de payer le coût GPU du shader pour ces presets.
-        VibePreset.minimal || VibePreset.glassmorphism || VibePreset.custom => null,
+        // de payer le coût GPU du shader pour ces presets. `newOled` reste
+        // volontairement dans ce groupe : son identité "noir pur" (Section 3)
+        // n'a besoin ni de particules ni de nébuleuse, contrairement à `oled`
+        // (Space), qui en garde une.
+        VibePreset.minimal || VibePreset.glassmorphism || VibePreset.custom || VibePreset.newOled => null,
       };
 }
 
@@ -128,11 +180,17 @@ class VibeVisual {
     this.preset,
     this.effect = VibeCustomEffect.fluid,
     this.customBackgroundVideoPath,
+    this.showCoverImage = true,
   });
 
   final List<Color> gradientColors;
   final Color accentColor;
   final String? backgroundImagePath;
+  // Section 3 : pochette masquable pour Custom/New OLED/Neon/Retro (UI dans
+  // VibeCustomizerScreen) — quand `false`, MasterPlayerScreen omet l'image et
+  // recentre le reste du contenu (titre/artiste/contrôles) à sa place plutôt
+  // que de laisser un espace vide.
+  final bool showCoverImage;
   // Preset d'origine — `null` pour le repli neutre (aucune playlist active).
   // Alimente le choix du style de particules (shader) et du profil haptique
   // (VibeHapticService), qui ont besoin du preset discret, pas seulement des
