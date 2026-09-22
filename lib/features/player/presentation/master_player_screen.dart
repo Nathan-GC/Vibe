@@ -36,6 +36,21 @@ class _MasterPlayerScreenState extends ConsumerState<MasterPlayerScreen>
   late final TempoSyncController _tempoController =
       TempoSyncController(vsync: this);
 
+  // Clé stable pour le PageView (Player + Queue) : sans elle, chaque bascule
+  // du fond entre `VibeVideoBackground` et `FluidBackground` (types de widget
+  // différents) fait recréer tout le sous-arbre `child`, y compris ce
+  // PageView et son état de scroll interne — Flutter détruit puis reconstruit
+  // au lieu de réutiliser l'élément. Avec un `GlobalKey`, l'élément est
+  // déplacé (réutilisé) sous le nouveau parent plutôt que détruit. Cause
+  // racine probable du crash `_dependents.isEmpty` observé en QA (Tests
+  // Robustesse Système, Section 3) lors de bascules rapides d'onglets : la
+  // Vibe peut encore être en transition (800ms, voir AnimatedVibeTheme)
+  // pendant qu'on quitte puis revient sur l'onglet Lecteur, et la
+  // destruction/reconstruction du PageView en plein vol laissait des
+  // `InheritedElement` internes (Scrollable/PrimaryScrollController) avec des
+  // dépendants non nettoyés.
+  final GlobalKey _pageViewKey = GlobalKey();
+
   @override
   void dispose() {
     _tempoController.dispose();
@@ -95,6 +110,7 @@ class _MasterPlayerScreenState extends ConsumerState<MasterPlayerScreen>
           // Vibe reste donc visible et animée pendant le swipe vers la Queue
           // au lieu de disparaître derrière un fond vide.
           final Widget pageView = PageView(
+            key: _pageViewKey,
             children: [
               _PlayerPage(
                 tempoController: _tempoController,

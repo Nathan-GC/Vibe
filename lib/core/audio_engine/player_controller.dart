@@ -99,10 +99,16 @@ class PlayerController extends _$PlayerController {
   }
 
   /// Audio Focus (Étape 5) : coupe la lecture sur appel entrant, notification
-  /// d'une autre app qui prend le focus, ou casque débranché. Volontairement
-  /// pas de reprise automatique à la fin d'une interruption transitoire — la
-  /// musique qui repartirait seule (ex. juste après un appel, en réunion)
-  /// surprendrait plus qu'elle n'aiderait ; à l'utilisateur de relancer.
+  /// d'une autre app qui prend le focus, ou casque débranché. La reprise
+  /// automatique de la lecture à la fin d'une interruption transitoire (appel
+  /// raccroché, notification prioritaire écoulée) EST le comportement
+  /// officiel et voulu de Vibe Player — confirmé en QA (batterie Robustesse
+  /// Système, Section 1) : redémarrer sans geste utilisateur est attendu ici,
+  /// contrairement à une simple pause manuelle qui doit rester silencieuse.
+  /// Cette reprise est gérée nativement par la négociation de focus audio
+  /// d'ExoPlayer/just_audio côté Android dès que le focus est restitué ; ce
+  /// listener ne gère explicitement que le début de l'interruption
+  /// (`event.begin`), la fin n'a donc volontairement pas de branche dédiée.
   Future<void> _configureAudioSession() async {
     final AudioSession session = await AudioSession.instance;
     await session.configure(const AudioSessionConfiguration.music());

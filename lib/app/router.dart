@@ -100,6 +100,16 @@ final GoRouter appRouter = GoRouter(
 /// bloquée au premier plan, un bouton Retour qui ne répond plus). Appeler
 /// explicitement [SystemNavigator.pop] dans ce cas précis est la seule
 /// façon fiable de vraiment quitter l'app.
+/// Persistance des 3 onglets (Robustesse Système, Section 3) :
+/// `StatefulShellRoute.indexedStack` (voir plus haut) construit déjà en
+/// interne un `IndexedStack` sur les Navigators de chaque branche — les 3
+/// onglets restent donc mounted en permanence, jamais détruits/reconstruits
+/// à la bascule, `navigationShell` ci-dessous n'a donc pas besoin d'un
+/// `IndexedStack` explicite supplémentaire. Le crash `_dependents.isEmpty`
+/// observé en QA lors de bascules rapides d'onglets ne venait pas d'ici :
+/// root-cause identifiée dans `MasterPlayerScreen` (voir `_pageViewKey`,
+/// `master_player_screen.dart`) — le PageView Player/Queue était recréé à
+/// chaque bascule du fond Vibe entre vidéo et fluide, pas par ce Shell.
 class _TabShell extends ConsumerWidget {
   const _TabShell({required this.navigationShell});
 
