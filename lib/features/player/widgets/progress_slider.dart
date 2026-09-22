@@ -58,8 +58,16 @@ class _ProgressSliderState extends ConsumerState<ProgressSlider> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(_format(Duration(milliseconds: valueMs.round())), style: Theme.of(context).textTheme.bodySmall),
-              Text(_format(duration), style: Theme.of(context).textTheme.bodySmall),
+              // QA Section 2.B : explicitement teintées à `widget.color`
+              // (vibe.accentColor) — laissées au style ambiant par défaut,
+              // elles restaient illisibles sur les Vibes sombres (ex. Space,
+              // New OLED) dont le thème Material de base n'a pas de rapport
+              // avec la palette de la Vibe active.
+              Text(
+                _format(Duration(milliseconds: valueMs.round())),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: widget.color),
+              ),
+              Text(_format(duration), style: Theme.of(context).textTheme.bodySmall?.copyWith(color: widget.color)),
             ],
           ),
         ),

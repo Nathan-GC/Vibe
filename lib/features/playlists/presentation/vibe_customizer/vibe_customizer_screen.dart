@@ -40,10 +40,22 @@ class VibeCustomizerScreen extends ConsumerWidget {
                 // sens que pour le preset réellement actif de la playlist.
                 final bool showCoverToggle =
                     isSelected && preset.exposesCoverToggle;
+                // QA Section 2.D : `preset.accentColor` seul devenait invisible
+                // pour Space/New OLED (blanc pur) sur une carte à fond clair —
+                // bordure de sélection alors indiscernable. Repli sur la
+                // couleur primaire du thème (contraste garanti sur
+                // `colorScheme.surface`) uniquement quand l'accent ET le fond
+                // de carte sont tous deux clairs ; sinon l'accent du preset
+                // reste utilisé tel quel (déjà lisible dans ce cas).
+                final Color cardSurface = Theme.of(context).colorScheme.surface;
+                final Color selectionBorderColor =
+                    preset.accentColor.computeLuminance() > 0.5 && cardSurface.computeLuminance() > 0.5
+                        ? Theme.of(context).colorScheme.primary
+                        : preset.accentColor;
                 return Card(
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
-                    side: isSelected ? BorderSide(color: preset.accentColor, width: 2) : BorderSide.none,
+                    side: isSelected ? BorderSide(color: selectionBorderColor, width: 2) : BorderSide.none,
                   ),
                   child: Column(
                     children: [

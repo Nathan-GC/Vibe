@@ -220,9 +220,16 @@ void main() {
     if (uv.y < horizonY) {
       // Soleil couchant strié : dégradé jaune -> rose, tranché par des
       // bandes horizontales qui s'élargissent vers le bas (effet "vinyle
-      // découpé"), classique de l'iconographie synthwave.
-      vec2 sunCenter = vec2(0.5 * aspect, horizonY - 0.20);
-      float sunRadius = 0.20;
+      // découpé"), classique de l'iconographie synthwave. Repoussé plus haut
+      // et légèrement réduit (QA — Section 2.A) : à son ancienne position
+      // (centre à 42% de hauteur, rayon 0.20 -> jusqu'à ~62% de hauteur), le
+      // disque touchait la ligne d'horizon ET la zone centrale de l'écran où
+      // s'affichent Titre/Artiste — collision particulièrement visible quand
+      // la pochette est masquée (`showCoverImage`, Section 3), le contenu
+      // restant remontant alors vers le centre de l'écran. Reste bien dans
+      // une zone "ciel" dédiée au-dessus de la grille, sans toucher l'horizon.
+      vec2 sunCenter = vec2(0.5 * aspect, horizonY - 0.34);
+      float sunRadius = 0.15;
       float distToSun = distance(auv, sunCenter);
       float sunMask = smoothstep(sunRadius, sunRadius - 0.008, distToSun);
 
