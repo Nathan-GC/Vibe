@@ -10,15 +10,33 @@ import '../../theme/design_system/app_spacing.dart';
 import '../../theme/design_system/vibe_design_system.dart';
 import 'playlist_cover_image.dart';
 
-/// Lecture immédiate d'une playlist depuis sa pochette (Section 3.3) —
-/// factorisé ici pour rester identique au bouton "Lire" dédié de Mon Espace
-/// (voir PersonalSpaceScreen._PlaylistTile) : ne fait rien si la playlist est
-/// vide plutôt que de naviguer vers un Lecteur sans rien à jouer.
+// Playlists dont le lancement est en cours : un double tap rapide (fréquent
+// maintenant que l'appui simple lance directement la lecture) ne doit pas
+// relancer deux fois la même playlist depuis le début.
+final Set<String> _launchingPlaylistIds = {};
+
+/// Lecture immédiate d'une playlist (appui simple sur une carte ou une ligne
+/// de playlist, voir la convention de gestes de [PlaylistCard]) puis bascule
+/// sur le Lecteur. Playlist vide : rien à lire, un message l'indique et
+/// rappelle que l'appui long ouvre l'éditeur — plutôt qu'un tap sans aucun
+/// effet visible, qui ressemblerait à un geste non pris en compte.
 Future<void> playPlaylistAndNavigate(BuildContext context, WidgetRef ref, Playlist playlist) async {
-  final List<Track> tracks = await ref.read(playlistRepositoryProvider).fetchOrderedTracks(playlist.id);
-  if (tracks.isEmpty) return;
-  await ref.read(playerControllerProvider.notifier).playPlaylist(playlist.id, tracks);
-  if (context.mounted) context.go('/player');
+  if (!_launchingPlaylistIds.add(playlist.id)) return;
+  try {
+    final List<Track> tracks = await ref.read(playlistRepositoryProvider).fetchOrderedTracks(playlist.id);
+    if (tracks.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('"${playlist.title}" est vide — appui long pour l\'éditer.')),
+        );
+      }
+      return;
+    }
+    await ref.read(playerControllerProvider.notifier).playPlaylist(playlist.id, tracks);
+    if (context.mounted) context.go('/player');
+  } finally {
+    _launchingPlaylistIds.remove(playlist.id);
+  }
 }
 
 /// Carte verticale d'une playlist (Design System, charte Spotify) : pochette
@@ -26,29 +44,23 @@ Future<void> playPlaylistAndNavigate(BuildContext context, WidgetRef ref, Playli
 /// aussi bien dans les carrousels horizontaux (Mon espace, Découverte) qu'en
 /// grille.
 ///
-/// Convention de gestes commune à toute l'app (playlists, artistes,
-/// morceaux) :
-///  - appui simple = action principale, IMMÉDIATE (lecture depuis une
-///    pochette, ouverture depuis un titre) — jamais conditionnée à un appui
-///    long préalable ;
-///  - appui long = vue détaillée/actions secondaires (éditeur de playlist,
-///    fiche artiste, feuille d'actions d'un morceau), jamais une lecture.
+/// Convention de gestes commune à toute l'app (retest QA 61b5cf1) :
+///  - appui simple, n'importe où sur la carte (pochette, titre,
+///    sous-titre) = LECTURE immédiate ([onTap], en pratique
+///    [playPlaylistAndNavigate]) ;
+///  - appui long = SEUL accès à la vue détaillée ([onLongPress] : éditeur de
+///    playlist, fiche artiste, feuille d'actions d'un morceau).
 /// Exception : les listes réordonnables (file d'attente, éditeur de
 /// playlist) où l'appui long reste réservé au glisser-déposer.
+///
+/// Une seule zone tactile (un seul InkWell) : l'ancienne distinction
+/// pochette = lecture / titre = édition (Section 3.3) est abandonnée.
 class PlaylistCard extends StatelessWidget {
-  const PlaylistCard(
-      {super.key, required this.playlist, this.onTap, this.onImageTap, this.onLongPress, this.width = 152});
+  const PlaylistCard({super.key, required this.playlist, required this.onTap, required this.onLongPress, this.width = 152});
 
   final Playlist playlist;
-  final VoidCallback? onTap;
-  // Appui long (voir convention ci-dessus) : vue détaillée, sur toute la
-  // carte pochette comprise.
-  final VoidCallback? onLongPress;
-  // Section 3.3 : appui sur la pochette = lecture immédiate, distinct du
-  // reste de la carte (titre/sous-titre) qui garde [onTap] (édition). Retombe
-  // sur [onTap] si non fourni, pour rester compatible avec un appelant qui ne
-  // distinguerait pas les deux zones.
-  final VoidCallback? onImageTap;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
   final double width;
 
   @override
@@ -64,12 +76,7 @@ class PlaylistCard extends StatelessWidget {
           children: [
             AspectRatio(
               aspectRatio: 1,
-              child: InkWell(
-                borderRadius: const BorderRadius.all(Radius.circular(AppRadii.card)),
-                onTap: onImageTap ?? onTap,
-                onLongPress: onLongPress,
-                child: PlaylistCoverImage(playlist: playlist),
-              ),
+              child: PlaylistCoverImage(playlist: playlist),
             ),
             const SizedBox(height: AppSpacing.s),
             Text(

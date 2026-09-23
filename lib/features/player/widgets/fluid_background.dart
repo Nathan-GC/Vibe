@@ -44,12 +44,18 @@ class FluidBackground extends StatefulWidget {
     required this.vibe,
     required this.coverArtPath,
     required this.child,
+    this.coverKey,
   });
 
   final TempoSyncController tempoController;
   final VibeVisual vibe;
   final String? coverArtPath;
   final Widget child;
+  // Clé posée sur la pochette affichée par le Player (MasterPlayerScreen) :
+  // la nébuleuse Space se centre sur SA position réelle à l'écran (suit le
+  // swipe vers la Queue, le flottement du mode Focus...), pas sur le centre
+  // du canvas. Absente ou pochette masquée : repli sur une position fixe.
+  final GlobalKey? coverKey;
 
   @override
   State<FluidBackground> createState() => _FluidBackgroundState();
@@ -60,6 +66,7 @@ class _FluidBackgroundState extends State<FluidBackground> with SingleTickerProv
   // Neon ne dépendent d'un état propre à une playlist, inutile de les
   // recompiler/redécoder à chaque ouverture du Player.
   static Future<ui.FragmentProgram>? _shaderProgramFuture;
+  static Future<ui.FragmentProgram>? _nebulaProgramFuture;
   static Future<ui.Image>? _backdropImageFuture;
   static Future<ui.Image>? _dummySamplerImageFuture;
 
@@ -76,6 +83,14 @@ class _FluidBackgroundState extends State<FluidBackground> with SingleTickerProv
   List<Color>? _paletteColors;
   String? _paletteSourcePath;
   ui.FragmentShader? _shader;
+  // Nébuleuse FBM du preset Space (assets/shaders/space_nebula.frag) —
+  // chargée uniquement quand Space est affiché au moins une fois ; tant
+  // qu'elle n'est pas prête (ou si elle échoue), `_paintNebula` retombe sur
+  // un halo radial dessiné au Canvas, centré au même endroit.
+  ui.FragmentShader? _nebulaShader;
+  // Clé du CustomPaint lui-même : référence de coordonnées pour convertir la
+  // position de la pochette (voir _coverCenterInCanvas).
+  final GlobalKey _paintKey = GlobalKey();
   // Décodage indépendant du même fichier que Couche 1 (Image.asset) : le
   // shader a besoin des pixels bruts (sampler2D) pour la réfraction des
   // gouttes et la détection des zones néon, ce qu'un widget Image ne peut
@@ -96,6 +111,7 @@ class _FluidBackgroundState extends State<FluidBackground> with SingleTickerProv
     // session qui reste sur un autre preset.
     _loadDummySamplerImage();
     if (widget.vibe.preset == VibePreset.neon) _loadBackdropImage();
+    if (widget.vibe.preset == VibePreset.oled) _loadNebulaShader();
   }
 
   @override
@@ -103,6 +119,31 @@ class _FluidBackgroundState extends State<FluidBackground> with SingleTickerProv
     super.didUpdateWidget(oldWidget);
     if (oldWidget.coverArtPath != widget.coverArtPath) _maybeExtractPalette();
     if (widget.vibe.preset == VibePreset.neon && _backdropImage == null) _loadBackdropImage();
+    if (widget.vibe.preset == VibePreset.oled && _nebulaShader == null) _loadNebulaShader();
+  }
+
+  Future<void> _loadNebulaShader() async {
+    try {
+      _nebulaProgramFuture ??= ui.FragmentProgram.fromAsset('assets/shaders/space_nebula.frag');
+      final ui.FragmentProgram program = await _nebulaProgramFuture!;
+      if (!mounted || _nebulaShader != null) return;
+      setState(() => _nebulaShader = program.fragmentShader());
+    } catch (_) {
+      // Dégradation silencieuse : halo radial Canvas (voir _paintNebula).
+    }
+  }
+
+  /// Centre de la pochette dans le repère du CustomPaint, lu au moment du
+  /// paint (layout déjà terminé pour la frame) : `null` si la pochette n'est
+  /// pas affichée (masquée, page Queue hors écran...) — `_paintNebula`
+  /// retombe alors sur une position fixe.
+  Offset? _coverCenterInCanvas() {
+    final RenderObject? cover = widget.coverKey?.currentContext?.findRenderObject();
+    final RenderObject? canvasBox = _paintKey.currentContext?.findRenderObject();
+    if (cover is! RenderBox || canvasBox is! RenderBox) return null;
+    if (!cover.attached || !canvasBox.attached || !cover.hasSize || !canvasBox.hasSize) return null;
+    final Offset global = cover.localToGlobal(cover.size.center(Offset.zero));
+    return canvasBox.globalToLocal(global);
   }
 
   Future<void> _loadShader() async {
@@ -222,7 +263,10 @@ class _FluidBackgroundState extends State<FluidBackground> with SingleTickerProv
         // reste) : `paintGradientBlobs` retire le fond opaque/halos habituels
         // uniquement quand une photo va être dessinée juste en-dessous.
         final Widget shaderOverlay = CustomPaint(
+          key: _paintKey,
           painter: _FluidPainter(
+            nebulaShader: isSpaceNebula ? _nebulaShader : null,
+            coverCenterResolver: _coverCenterInCanvas,
             colors: colors,
             drift: _driftController.value,
             beatPhase: beatPhase,
@@ -281,6 +325,8 @@ class _FluidBackgroundState extends State<FluidBackground> with SingleTickerProv
 
 class _FluidPainter extends CustomPainter {
   _FluidPainter({
+    required this.nebulaShader,
+    required this.coverCenterResolver,
     required this.colors,
     required this.drift,
     required this.beatPhase,
@@ -335,6 +381,11 @@ class _FluidPainter extends CustomPainter {
   // sert de sampler de repli tant que `backdropImage` n'est pas prêt.
   final ui.Image? backdropImage;
   final ui.Image? dummySamplerImage;
+  // Space uniquement — voir [_paintNebula].
+  final ui.FragmentShader? nebulaShader;
+  // Appelé pendant paint() (layout de la frame terminé) : centre réel de la
+  // pochette dans ce canvas, ou `null` si elle n'est pas affichée.
+  final Offset? Function() coverCenterResolver;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -422,47 +473,82 @@ class _FluidPainter extends CustomPainter {
     );
   }
 
-  // Space (Section 3) : nébuleuse animée centrée autour de la pochette (elle-
-  // même centrée à l'écran par MasterPlayerScreen) au lieu de l'ancien aplat
-  // noir bord-à-bord — rayon plafonné à mi-distance de l'écran (`shortestSide
-  // * 0.5`), dérive douce + respiration au beat comme les autres effets.
+  // Space (Section 3) : nébuleuse sur fond TOUJOURS noir pur — seule la
+  // lueur porte la couleur (palette de la pochette, ou repli indigo/violet
+  // #2B0054/#1A0033 sans pochette).
   //
-  // Bug corrigé : le fond de base remplissait TOUT le canvas avec
-  // `colors.first` (la couleur dominante extraite de la pochette) — un aplat
-  // plein écran plutôt qu'un fond spatial, et le dernier arrêt du dégradé
-  // (`Colors.transparent`) laissait alors transparaître cet aplat au lieu de
-  // vraiment s'estomper vers du noir. Le fond est maintenant TOUJOURS noir
-  // pur ; seule la lueur radiale porte la couleur, fondue jusqu'à
-  // transparence complète (donc jusqu'au noir de base) avant les bords.
+  // Retest QA (61b5cf1) :
+  //  1. Centrage sur la POCHETTE réelle ([coverCenterResolver]), plus sur
+  //     `size.center` — la pochette est plus haute que le centre du canvas.
+  //  2. Forme/mouvement : bruit fractal FBM à domaine déformé (filaments
+  //     nuageux) en rotation très lente (0.03 rad/s), rendu par
+  //     assets/shaders/space_nebula.frag ; halo radial Canvas en repli.
+  //  3. Luminescence : respiration sinusoïdale lente (une par mesure de 4
+  //     temps) de ±8% max — remplace l'ancien `beatPhase` en dents de scie
+  //     (±15% du rayon, remis à zéro à chaque battement = scintillement).
+  //  4. OLED strict : ellipse dont chaque demi-axe est borné à 85% de la
+  //     distance pochette -> bord sur son axe ; noir pur garanti au-delà (et
+  //     l'estompe est déjà < 8% à 90% de l'ellipse).
   void _paintNebula(Canvas canvas, Size size) {
     canvas.drawRect(Offset.zero & size, Paint()..color = Colors.black);
+    if (size.isEmpty) return;
 
-    final double maxRadius = size.shortestSide * 0.5;
-    final double pulseRadius = maxRadius * (0.85 + beatPhase * 0.15);
-    final Offset driftOffset =
-        Offset(math.cos(drift * 2 * math.pi), math.sin(drift * 2 * math.pi)) * size.shortestSide * 0.03;
-    final Offset center = size.center(Offset.zero) + driftOffset;
+    // Repli (pochette masquée ou hors écran) : là où la pochette se trouve
+    // habituellement, dans le tiers haut-central du Player.
+    final Offset center = coverCenterResolver() ?? Offset(size.width / 2, size.height * 0.42);
+    // Ellipse : chaque demi-axe borné à 85% de la distance au bord le plus
+    // proche SUR SON AXE. Un rayon circulaire unique (borné par la seule
+    // largeur, la plus contraignante) dépassait à peine la demi-largeur de
+    // la pochette (140dp) : la nébuleuse restait cachée derrière elle.
+    final double radiusX = math.min(center.dx, size.width - center.dx) * 0.85;
+    final double radiusY = math.min(center.dy, size.height - center.dy) * 0.85;
+    if (radiusX <= 1 || radiusY <= 1) return;
 
-    // Palette de la lueur : couleurs extraites de la pochette quand
-    // disponibles (voir FluidBackground._maybeExtractPalette), sinon repli
-    // indigo/violet profond plutôt que de laisser Space totalement plat sans
-    // pochette — la nébuleuse doit toujours "respirer" un minimum.
+    final double barsPerSecond = math.max(shaderTempo, 1) / 60 / 4;
+    final double breath = 1 + 0.08 * math.sin(2 * math.pi * shaderTime * barsPerSecond);
+
     final List<Color> glowColors = (hasCoverPalette && colors.length >= 2)
         ? colors
         : const [Color(0xFF2B0054), Color(0xFF1A0033)];
 
-    canvas.drawRect(
-      Offset.zero & size,
+    final ui.FragmentShader? shader = nebulaShader;
+    if (shader != null) {
+      shader
+        ..setFloat(0, size.width)
+        ..setFloat(1, size.height)
+        ..setFloat(2, center.dx)
+        ..setFloat(3, center.dy)
+        ..setFloat(4, shaderTime)
+        ..setFloat(5, radiusX)
+        ..setFloat(6, radiusY)
+        ..setFloat(7, breath)
+        ..setFloat(8, glowColors[0].r)
+        ..setFloat(9, glowColors[0].g)
+        ..setFloat(10, glowColors[0].b)
+        ..setFloat(11, glowColors[1].r)
+        ..setFloat(12, glowColors[1].g)
+        ..setFloat(13, glowColors[1].b);
+      canvas.drawRect(Offset.zero & size, Paint()..shader = shader);
+      return;
+    }
+
+    // Repli sans shader : halo radial au même centre, même respiration,
+    // fondu jusqu'à transparence (donc noir) avant le plus petit demi-axe.
+    final double radius = math.min(radiusX, radiusY);
+    canvas.drawCircle(
+      center,
+      radius,
       Paint()
         ..shader = ui.Gradient.radial(
           center,
-          pulseRadius,
+          radius,
           [
-            glowColors.first.withValues(alpha: 0.55),
-            glowColors[1].withValues(alpha: 0.25),
+            glowColors.first.withValues(alpha: (0.5 * breath).clamp(0.0, 1.0)),
+            glowColors[1].withValues(alpha: (0.22 * breath).clamp(0.0, 1.0)),
+            Colors.transparent,
             Colors.transparent,
           ],
-          const [0.0, 0.5, 1.0],
+          const [0.0, 0.45, 0.85, 1.0],
         ),
     );
   }
@@ -504,6 +590,9 @@ class _FluidPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _FluidPainter oldDelegate) {
+    // Space : la pochette peut bouger (swipe, flottement Focus) sans que rien
+    // d'autre ne change — toujours repeindre la nébuleuse.
+    if (isSpaceNebula) return true;
     return oldDelegate.drift != drift ||
         oldDelegate.beatPhase != beatPhase ||
         oldDelegate.colors != colors ||

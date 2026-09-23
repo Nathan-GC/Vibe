@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/audio_engine/player_immersive_mode_provider.dart';
+import '../core/navigation/shell_route_visibility.dart';
 import '../features/discovery/presentation/artist_profile_screen.dart';
 import '../features/discovery/presentation/discovery_screen.dart';
 import '../features/discovery/presentation/import_screen.dart';
@@ -146,19 +147,30 @@ class _TabShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final bool isImmersive = ref.watch(playerImmersiveModeProvider);
     final bool onPlayerTab = navigationShell.currentIndex == _playerTabIndex;
+    // Retest QA (61b5cf1) : barre d'état masquée DANS les Paramètres. Les
+    // sous-pages (/settings, fiche artiste...) sont poussées sur le Navigator
+    // racine par-dessus cette coque, sans changer `currentIndex` : "onglet
+    // Lecteur" ne veut donc pas dire "Lecteur affiché". `isCurrentOf` crée
+    // une dépendance — cette coque est reconstruite (et le mode système
+    // réappliqué, Déclencheur 2) à chaque ouverture/fermeture de sous-page.
+    final bool shellIsCurrent = ModalRoute.isCurrentOf(context) ?? true;
+    final bool playerDisplayed = onPlayerTab && shellIsCurrent;
 
     // Déclencheur 1 : le mode immersif change SANS changement d'onglet
     // (entrée automatique après inactivité pendant qu'on est déjà sur
     // Lecteur, ou sortie par tap) — réagit précisément à ce changement de
     // valeur plutôt que d'attendre la prochaine reconstruction.
     ref.listen<bool>(playerImmersiveModeProvider, (previous, next) {
-      _syncSystemUiMode(onPlayerTab: navigationShell.currentIndex == _playerTabIndex, isImmersive: next);
+      _syncSystemUiMode(
+        onPlayerTab: navigationShell.currentIndex == _playerTabIndex && shellIsCurrent,
+        isImmersive: next,
+      );
     });
 
     // Déclencheur 2 (filet de sécurité) : réapplique aussi le mode courant à
     // chaque reconstruction de la coque, au cas où go_router en déclencherait
     // une sans que les déclencheurs explicites ci-dessous n'aient encore agi.
-    _syncSystemUiMode(onPlayerTab: onPlayerTab, isImmersive: isImmersive);
+    _syncSystemUiMode(onPlayerTab: playerDisplayed, isImmersive: isImmersive);
 
     return PopScope(
       canPop: false,
@@ -184,7 +196,9 @@ class _TabShell extends ConsumerWidget {
         SystemNavigator.pop();
       },
       child: Scaffold(
-        body: navigationShell,
+        // Publie `shellIsCurrent` aux onglets : le Lecteur s'en sert pour
+        // annuler son Timer de Focus dès qu'une sous-page le recouvre.
+        body: ShellRouteVisibility(isCurrent: shellIsCurrent, child: navigationShell),
         // Bug régression (Focus Mode) : la barre de navigation restait
         // visible par-dessus le canevas noir du mode immersif — seuls les
         // contrôles PROPRES au Player réagissaient à `isImmersive`, cette

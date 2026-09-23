@@ -285,8 +285,7 @@ class _SuggestionsPanel extends ConsumerWidget {
                           separatorBuilder: (context, index) => const SizedBox(width: AppSpacing.m),
                           itemBuilder: (context, index) => PlaylistCard(
                             playlist: data[index],
-                            onTap: () => context.push('/space/playlist/${data[index].id}/edit'),
-                            onImageTap: () => playPlaylistAndNavigate(context, ref, data[index]),
+                            onTap: () => playPlaylistAndNavigate(context, ref, data[index]),
                             onLongPress: () => context.push('/space/playlist/${data[index].id}/edit'),
                           ),
                         ),

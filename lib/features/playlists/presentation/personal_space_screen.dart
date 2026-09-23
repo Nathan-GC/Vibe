@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/audio_engine/player_controller.dart';
 import '../../../core/shared/widgets/playlist_card.dart';
 import '../../../core/storage/database/app_database.dart';
 import '../../../core/storage/database/track_repository.dart';
@@ -96,8 +95,7 @@ class PersonalSpaceScreen extends ConsumerWidget {
                   separatorBuilder: (context, index) => const SizedBox(width: AppSpacing.m),
                   itemBuilder: (context, index) => PlaylistCard(
                     playlist: data[index],
-                    onTap: () => context.push('/space/playlist/${data[index].id}/edit'),
-                    onImageTap: () => playPlaylistAndNavigate(context, ref, data[index]),
+                    onTap: () => playPlaylistAndNavigate(context, ref, data[index]),
                     onLongPress: () => context.push('/space/playlist/${data[index].id}/edit'),
                   ),
                 ),
@@ -163,21 +161,14 @@ class _PlaylistTile extends ConsumerWidget {
       leading: CircleAvatar(backgroundColor: vibe.accentColor, radius: 10),
       title: Text(playlist.title),
       subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
-      onTap: () => context.push('/space/playlist/${playlist.id}/edit'),
+      // Convention de gestes (voir PlaylistCard) : appui simple = lecture
+      // immédiate, appui long = seul accès à l'éditeur. L'ancien bouton
+      // "Lire" dédié devenait redondant avec l'appui simple, retiré.
+      onTap: () => playPlaylistAndNavigate(context, ref, playlist),
       onLongPress: () => context.push('/space/playlist/${playlist.id}/edit'),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          IconButton(
-            icon: const Icon(Icons.play_circle_outline),
-            tooltip: 'Lire',
-            onPressed: () async {
-              final List<Track> tracks = await ref.read(playlistRepositoryProvider).fetchOrderedTracks(playlist.id);
-              if (tracks.isEmpty) return;
-              await ref.read(playerControllerProvider.notifier).playPlaylist(playlist.id, tracks);
-              if (context.mounted) context.go('/player');
-            },
-          ),
           IconButton(
             icon: const Icon(Icons.palette_outlined),
             tooltip: 'Vibe',

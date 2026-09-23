@@ -37,6 +37,33 @@ class _AnimatedVibeThemeState extends AnimatedWidgetBaseState<AnimatedVibeTheme>
     ) as _VibeVisualTween?;
   }
 
+  /// Retest QA (61b5cf1) : passage Space (pochette visible) -> Retro
+  /// (pochette masquée) — le nouveau morceau restait affiché sous l'ancien
+  /// preset/l'ancienne visibilité de pochette pendant la transition, les
+  /// champs discrets ne basculant qu'à mi-parcours (`t < 0.5`, voir
+  /// [_VibeVisualTween.lerp]). Un changement STRUCTUREL (preset, effet,
+  /// visibilité de pochette, image/vidéo de fond) est désormais appliqué
+  /// IMMÉDIATEMENT, sans fondu : `begin = end` rend la transition instantanée
+  /// (chaque frame évalue exactement la nouvelle Vibe). Seules les variations
+  /// de couleurs au sein d'un même preset (ex. palette d'une autre playlist
+  /// Custom) gardent l'interpolation douce de 800ms.
+  @override
+  void didUpdateTweens() {
+    super.didUpdateTweens();
+    final _VibeVisualTween? tween = _vibeTween;
+    final VibeVisual? from = tween?.begin;
+    final VibeVisual? to = tween?.end;
+    if (tween == null || from == null || to == null) return;
+    if (_isStructuralChange(from, to)) tween.begin = to;
+  }
+
+  static bool _isStructuralChange(VibeVisual a, VibeVisual b) =>
+      a.preset != b.preset ||
+      a.effect != b.effect ||
+      a.showCoverImage != b.showCoverImage ||
+      a.backgroundImagePath != b.backgroundImagePath ||
+      a.customBackgroundVideoPath != b.customBackgroundVideoPath;
+
   @override
   Widget build(BuildContext context) {
     final VibeVisual animatedVibe = _vibeTween?.evaluate(animation) ?? widget.vibe;

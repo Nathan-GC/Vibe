@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/animation/tempo_sync/tempo_sync_controller.dart';
 import '../../../core/audio_engine/player_controller.dart';
 import '../../../core/audio_engine/player_immersive_mode_provider.dart';
+import '../../../core/navigation/shell_route_visibility.dart';
 import '../../../core/shared/widgets/add_to_playlist_sheet.dart';
 import '../../../core/storage/database/app_database.dart';
 import '../../../core/theme/global_theme/global_theme.dart';
@@ -57,6 +58,10 @@ class _MasterPlayerScreenState extends ConsumerState<MasterPlayerScreen>
   // rechargement transitoire de `playlistByIdProvider`.
   Playlist? _lastResolvedPlaylist;
 
+  // Position réelle de la pochette pour la nébuleuse Space (voir
+  // FluidBackground.coverKey).
+  final GlobalKey _coverKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
@@ -97,7 +102,20 @@ class _MasterPlayerScreenState extends ConsumerState<MasterPlayerScreen>
     // résolue pour le MÊME id plutôt que de retomber une frame sur le repli
     // neutre — ce qui faisait disparaître la pochette de repli et flasher la
     // Vibe par défaut.
-    Playlist? playlist = playlistAsync.value;
+    //
+    // Retest QA (61b5cf1) : au passage vers une AUTRE playlist, le stream
+    // `playlistByIdProvider(nouvel id)` démarre à vide — le nouveau morceau
+    // s'affichait d'abord sous la Vibe précédente/neutre. La liste complète
+    // (`playlistsProvider`, déjà chargée pour Mon Espace/Découverte) contient
+    // déjà cette playlist : utilisée comme résolution immédiate le temps que
+    // le stream dédié émette. `select` : ne reconstruit que si CETTE
+    // playlist change, pas à chaque modification d'une autre.
+    final Playlist? fromList = playlistId == null
+        ? null
+        : ref.watch(playlistsProvider.select(
+            (AsyncValue<List<Playlist>> all) => all.value?.where((p) => p.id == playlistId).firstOrNull,
+          ));
+    Playlist? playlist = playlistAsync.value ?? fromList;
     if (playlist != null) {
       _lastResolvedPlaylist = playlist;
     } else if (playlistAsync.isLoading && _lastResolvedPlaylist?.id == playlistId) {
@@ -140,6 +158,7 @@ class _MasterPlayerScreenState extends ConsumerState<MasterPlayerScreen>
                 tempoController: _tempoController,
                 vibe: animatedVibe,
                 player: player,
+                coverKey: _coverKey,
                 playlistCoverImagePath: playlistCoverImagePath,
               ),
               const QueueScreen(),
@@ -157,6 +176,7 @@ class _MasterPlayerScreenState extends ConsumerState<MasterPlayerScreen>
             tempoController: _tempoController,
             vibe: animatedVibe,
             coverArtPath: effectiveCoverArtPath,
+            coverKey: _coverKey,
             child: _VibeBackgroundImageLayer(
                 backgroundImagePath: animatedVibe.backgroundImagePath,
                 child: pageView),
@@ -210,9 +230,12 @@ class _PlayerPage extends ConsumerStatefulWidget {
       {required this.tempoController,
       required this.vibe,
       required this.player,
+      required this.coverKey,
       this.playlistCoverImagePath});
 
   final TempoSyncController tempoController;
+  // Posée sur la pochette : FluidBackground y centre la nébuleuse Space.
+  final GlobalKey coverKey;
   final VibeVisual vibe;
   final PlayerSnapshot player;
   // Section 3.2 : pochette de repli quand le morceau en cours n'a pas de
@@ -244,18 +267,31 @@ class _PlayerPageState extends ConsumerState<_PlayerPage>
 
   // Bug QA "retour sur le Lecteur directement en Focus" : l'IndexedStack de
   // StatefulShellRoute garde cette page montée quand on change d'onglet (ou
-  // qu'une route racine comme /settings la recouvre), donc le Timer
-  // continuait de tourner hors écran et le Lecteur réapparaissait déjà en
-  // Focus. Trois conditions désormais nécessaires pour armer le Timer :
-  //  - [_playerVisible] : la route affichée est bien /player (écoute du
-  //    `routerDelegate`, couvre changement d'onglet ET route poussée) ;
-  //  - [_appInForeground] : l'app n'est pas en arrière-plan ;
-  //  - [_armedByUser] : l'utilisateur a touché le Lecteur depuis qu'il y est
-  //    (re)venu — le Focus automatique n'est jamais déclenché par la seule
-  //    arrivée sur l'onglet, y compris au lancement de l'app.
-  // Quitter le Lecteur (l'une des deux premières conditions qui tombe)
-  // annule le Timer, désarme [_armedByUser] et sort du Focus, ce qui rend
-  // la NavigationBar (80dp) via `_TabShell`.
+  // qu'une sous-page comme /settings la recouvre), donc le Timer continuait
+  // de tourner hors écran et le Lecteur réapparaissait déjà en Focus.
+  //
+  // Retest QA (61b5cf1) : le seul chemin du `routerDelegate` ne suffisait
+  // pas (Timer déclenché sous /settings, barre d'état masquée dans les
+  // Paramètres). La visibilité combine désormais 4 signaux indépendants,
+  // tous nécessaires — voir [_computeVisibility] :
+  //  - [_tickersEnabled] : `TickerMode` de l'Overlay/IndexedStack, coupé dès
+  //    qu'une route opaque recouvre le Lecteur ou que l'onglet est masqué ;
+  //  - [_pageRouteCurrent] : la route de la page dans SON Navigator de
+  //    branche est au sommet (feuille modale, dialogue de branche...) ;
+  //  - [_shellRouteCurrent] : la coque est au sommet du Navigator RACINE
+  //    (sous-pages /settings, fiche artiste, dialogues racine), publié par
+  //    `_TabShell` via [ShellRouteVisibility] ;
+  //  - [_routerPathIsPlayer] : chemin du `routerDelegate` == /player.
+  // S'y ajoutent [_appInForeground] (arrière-plan) et [_armedByUser] :
+  // l'utilisateur a touché le Lecteur depuis qu'il y est (re)venu — le
+  // Focus automatique n'est jamais déclenché par la seule arrivée sur
+  // l'onglet, y compris au lancement de l'app. Dès qu'un signal tombe, le
+  // Timer est annulé, [_armedByUser] désarmé et le Focus quitté (la
+  // NavigationBar de 80dp revient via `_TabShell`).
+  bool _tickersEnabled = true;
+  bool _pageRouteCurrent = true;
+  bool _shellRouteCurrent = true;
+  bool _routerPathIsPlayer = true;
   bool _playerVisible = true;
   bool _appInForeground = true;
   bool _armedByUser = false;
@@ -284,30 +320,43 @@ class _PlayerPageState extends ConsumerState<_PlayerPage>
       _router?.routerDelegate.removeListener(_onRouteChanged);
       _router = router;
       router?.routerDelegate.addListener(_onRouteChanged);
-      _playerVisible = _isPlayerRouteDisplayed();
     }
+    // Chacun de ces 3 appels crée une dépendance : didChangeDependencies est
+    // rappelé dès que l'un d'eux change (route poussée/retirée au-dessus du
+    // Lecteur, changement d'onglet).
+    _tickersEnabled = TickerMode.valuesOf(context).enabled;
+    _pageRouteCurrent = ModalRoute.isCurrentOf(context) ?? true;
+    _shellRouteCurrent = ShellRouteVisibility.isCurrentOf(context);
+    _routerPathIsPlayer = _isPlayerPath();
+    _computeVisibility();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // `inactive` volontairement ignoré : transitoire (volet de
+    // notifications, dialogue système), l'app reste affichée. Arrière-plan
+    // réel = hidden/paused/detached.
+    if (state == AppLifecycleState.inactive) return;
     final bool foreground = state == AppLifecycleState.resumed;
     if (foreground == _appInForeground) return;
     _appInForeground = foreground;
     if (!foreground) _leavePlayer();
   }
 
-  /// `true` uniquement quand la route réellement au premier plan est
-  /// l'onglet Lecteur — `false` sur Découverte/Espace (IndexedStack) comme
-  /// sous une route racine poussée par-dessus la coque (/settings, fiche
-  /// artiste...). Sans GoRouter (widget testé isolément) : visible.
-  bool _isPlayerRouteDisplayed() {
+  /// Sans GoRouter (widget testé isolément) : considéré comme /player.
+  bool _isPlayerPath() {
     final GoRouter? router = _router;
     if (router == null) return true;
     return router.routerDelegate.currentConfiguration.uri.path == '/player';
   }
 
   void _onRouteChanged() {
-    final bool visible = _isPlayerRouteDisplayed();
+    _routerPathIsPlayer = _isPlayerPath();
+    _computeVisibility();
+  }
+
+  void _computeVisibility() {
+    final bool visible = _tickersEnabled && _pageRouteCurrent && _shellRouteCurrent && _routerPathIsPlayer;
     if (visible == _playerVisible) return;
     _playerVisible = visible;
     if (!visible) _leavePlayer();
@@ -322,9 +371,10 @@ class _PlayerPageState extends ConsumerState<_PlayerPage>
     _inactivityTimer = null;
     _armedByUser = false;
     if (!mounted || !ref.read(playerImmersiveModeProvider)) return;
-    // Le `routerDelegate` peut notifier pendant une phase de build/layout :
-    // modifier un provider Riverpod à ce moment-là lève une exception, d'où
-    // le report à la fin de la frame dans ce cas précis.
+    // Appelé depuis didChangeDependencies (phase de build) ou depuis le
+    // `routerDelegate`, qui peut notifier pendant un build/layout : modifier
+    // un provider Riverpod à ce moment-là lève une exception, d'où le report
+    // à la fin de la frame dans ce cas précis.
     if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
       SchedulerBinding.instance.addPostFrameCallback((_) {
         if (mounted) ref.read(playerImmersiveModeProvider.notifier).set(false);
@@ -441,8 +491,10 @@ class _PlayerPageState extends ConsumerState<_PlayerPage>
         curve: Curves.easeInOut,
         child: GestureDetector(
           onLongPress: _enterImmersive,
-          child:
-              AlbumArtReactive(imagePath: albumArtPath, isPlaying: isPlaying),
+          child: KeyedSubtree(
+            key: widget.coverKey,
+            child: AlbumArtReactive(imagePath: albumArtPath, isPlaying: isPlaying),
+          ),
         ),
       ),
     );
@@ -591,7 +643,14 @@ class _PlayerPageState extends ConsumerState<_PlayerPage>
                     icon: Icons.settings_outlined,
                     color: vibe.accentColor,
                     tooltip: 'Paramètres',
-                    onPressed: () => context.push('/settings'),
+                    // Annulation explicite AVANT la navigation, en plus de
+                    // la détection de visibilité (didChangeDependencies) :
+                    // aucune fenêtre où le Timer pourrait se déclencher
+                    // pendant l'animation d'ouverture des Paramètres.
+                    onPressed: () {
+                      _leavePlayer();
+                      context.push('/settings');
+                    },
                   ),
                 ),
               ),

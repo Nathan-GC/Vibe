@@ -9,13 +9,23 @@ import 'vibe_engine.dart';
 /// un import circulaire avec app_database.dart (qui dépend déjà de VibePreset
 /// pour la colonne `vibe_style`).
 extension PlaylistVibeResolver on Playlist {
+  /// Visibilité EFFECTIVE de la pochette (retest QA 61b5cf1, "réglage qui
+  /// bloque") : `playlists.show_cover_image` n'est respecté que pour les
+  /// presets qui exposent le bouton "Afficher la pochette" (voir
+  /// [VibeCoverToggleAvailability]). Masquer la pochette sur Retro puis
+  /// passer sur Space (sans ce bouton) laissait l'utilisateur sans aucun
+  /// moyen de la réafficher. Les autres presets l'affichent désormais
+  /// toujours ; la valeur stockée est conservée telle quelle et s'applique
+  /// de nouveau dès le retour sur un preset qui l'expose.
+  bool get effectiveShowCoverImage => vibeStyle.exposesCoverToggle ? showCoverImage : true;
+
   VibeVisual get resolvedVibe {
     if (vibeStyle != VibePreset.custom) {
       return VibeVisual(
         gradientColors: vibeStyle.gradientColors,
         accentColor: vibeStyle.accentColor,
         preset: vibeStyle,
-        showCoverImage: showCoverImage,
+        showCoverImage: effectiveShowCoverImage,
       );
     }
 
@@ -32,7 +42,7 @@ extension PlaylistVibeResolver on Playlist {
       preset: VibePreset.custom,
       effect: customEffect,
       customBackgroundVideoPath: customBackgroundVideoPath.isEmpty ? null : customBackgroundVideoPath,
-      showCoverImage: showCoverImage,
+      showCoverImage: effectiveShowCoverImage,
     );
   }
 }

@@ -91,4 +91,19 @@ void main() {
     );
     expect(custom.resolvedVibe.showCoverImage, isFalse);
   });
+
+  test('a preset without the cover toggle always shows the cover, whatever was stored (retest QA 61b5cf1)', () async {
+    // Pochette masquée sur Retro puis passage sur Space (pas de bouton
+    // "Afficher la pochette") : l'utilisateur ne doit pas rester bloqué.
+    final Playlist space = await insertPlaylist(
+      PlaylistsCompanion.insert(
+        id: 'p1',
+        title: 'Test',
+        vibeStyle: const Value(VibePreset.oled),
+        showCoverImage: const Value(false),
+      ),
+    );
+    expect(space.showCoverImage, isFalse, reason: 'la valeur stockée est conservée pour un retour sur Retro');
+    expect(space.resolvedVibe.showCoverImage, isTrue);
+  });
 }

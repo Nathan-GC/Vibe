@@ -109,6 +109,8 @@ flutter:
   # Vibe Engine : particules audio-réactives (GLSL) superposées à FluidBackground.
   shaders:
     - assets/shaders/vibe_particles.frag
+    # Nébuleuse FBM du preset Space (voir FluidBackground._paintNebula).
+    - assets/shaders/space_nebula.frag
 
   # fonts:
   #   - family: AppFont
