@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -52,6 +53,16 @@ class _MasterPlayerScreenState extends ConsumerState<MasterPlayerScreen>
   // dépendants non nettoyés.
   final GlobalKey _pageViewKey = GlobalKey();
 
+  // Voir build() : dernière playlist résolue, réutilisée pendant un
+  // rechargement transitoire de `playlistByIdProvider`.
+  Playlist? _lastResolvedPlaylist;
+
+  @override
+  void initState() {
+    super.initState();
+    _tempoController.start();
+  }
+
   @override
   void dispose() {
     _tempoController.dispose();
@@ -61,7 +72,6 @@ class _MasterPlayerScreenState extends ConsumerState<MasterPlayerScreen>
   @override
   Widget build(BuildContext context) {
     final PlayerSnapshot player = ref.watch(playerControllerProvider);
-    final bool isPlaying = player.status == PlaybackStatus.playing;
 
     // Retour haptique synesthésique (Vibe Engine) sur changement de piste —
     // ici plutôt que dans PlayerController : le style dépend de la Vibe
@@ -74,21 +84,33 @@ class _MasterPlayerScreenState extends ConsumerState<MasterPlayerScreen>
       }
     });
 
+    // Continuité des Vibes : le ticker tourne en permanence (démarré dans
+    // initState), lecture en pause comprise — seul le BPM suit la piste.
     _tempoController.updateBpm((player.currentTrack?.bpm ?? 120).toDouble());
-    isPlaying ? _tempoController.start() : _tempoController.stop();
 
     final String? playlistId = player.currentPlaylistId;
-    final AsyncValue<Playlist?> playlist = playlistId == null
+    final AsyncValue<Playlist?> playlistAsync = playlistId == null
         ? const AsyncValue.data(null)
         : ref.watch(playlistByIdProvider(playlistId));
+    // Stabilité de la pochette : pendant un rechargement transitoire du
+    // stream (valeur momentanément absente), on garde la dernière playlist
+    // résolue pour le MÊME id plutôt que de retomber une frame sur le repli
+    // neutre — ce qui faisait disparaître la pochette de repli et flasher la
+    // Vibe par défaut.
+    Playlist? playlist = playlistAsync.value;
+    if (playlist != null) {
+      _lastResolvedPlaylist = playlist;
+    } else if (playlistAsync.isLoading && _lastResolvedPlaylist?.id == playlistId) {
+      playlist = _lastResolvedPlaylist;
+    }
     // Repli (playlist non résolue, ex. bref chargement après restauration à
     // froid, bug critique QA) : même repli neutre que `activeVibeProvider`
     // (couleur d'accent choisie par l'utilisateur en Réglages), pas un noir
     // figé (`black87`) sans rapport — voir [defaultVibeFor].
-    final VibeVisual vibe = playlist.value?.resolvedVibe ?? defaultVibeFor(ref.watch(userAccentColorProvider));
+    final VibeVisual vibe = playlist?.resolvedVibe ?? defaultVibeFor(ref.watch(userAccentColorProvider));
 
     final Track? track = player.currentTrack;
-    final String? playlistCoverImagePath = playlist.value?.coverImagePath;
+    final String? playlistCoverImagePath = playlist?.coverImagePath;
     // Section 3.2 : même repli pochette->playlist que MasterPlayerScreen
     // utilise déjà pour AlbumArtReactive, réutilisé ici pour l'extraction de
     // palette (FluidBackground) — un morceau sans pochette dédiée profite
@@ -209,7 +231,7 @@ class _PlayerPage extends ConsumerStatefulWidget {
 /// que la coque de navigation (`_TabShell`, router.dart) puisse le lire et
 /// le forcer à `false` depuis le bouton Retour Android (Section 2.B).
 class _PlayerPageState extends ConsumerState<_PlayerPage>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   // Section 3 : 7s (au lieu des 15s précédentes) avant le passage automatique
   // en mode Canvas/Focus.
   static const Duration _inactivityDelay = Duration(seconds: 7);
@@ -219,6 +241,25 @@ class _PlayerPageState extends ConsumerState<_PlayerPage>
   static const Duration _fadeDuration = kImmersiveTransitionDuration;
 
   Timer? _inactivityTimer;
+
+  // Bug QA "retour sur le Lecteur directement en Focus" : l'IndexedStack de
+  // StatefulShellRoute garde cette page montée quand on change d'onglet (ou
+  // qu'une route racine comme /settings la recouvre), donc le Timer
+  // continuait de tourner hors écran et le Lecteur réapparaissait déjà en
+  // Focus. Trois conditions désormais nécessaires pour armer le Timer :
+  //  - [_playerVisible] : la route affichée est bien /player (écoute du
+  //    `routerDelegate`, couvre changement d'onglet ET route poussée) ;
+  //  - [_appInForeground] : l'app n'est pas en arrière-plan ;
+  //  - [_armedByUser] : l'utilisateur a touché le Lecteur depuis qu'il y est
+  //    (re)venu — le Focus automatique n'est jamais déclenché par la seule
+  //    arrivée sur l'onglet, y compris au lancement de l'app.
+  // Quitter le Lecteur (l'une des deux premières conditions qui tombe)
+  // annule le Timer, désarme [_armedByUser] et sort du Focus, ce qui rend
+  // la NavigationBar (80dp) via `_TabShell`.
+  bool _playerVisible = true;
+  bool _appInForeground = true;
+  bool _armedByUser = false;
+  GoRouter? _router;
 
   late final AnimationController _floatController = AnimationController(
     vsync: this,
@@ -230,8 +271,70 @@ class _PlayerPageState extends ConsumerState<_PlayerPage>
   @override
   void initState() {
     super.initState();
-    _scheduleInactivity();
+    WidgetsBinding.instance.addObserver(this);
+    final AppLifecycleState? lifecycle = WidgetsBinding.instance.lifecycleState;
+    _appInForeground = lifecycle == null || lifecycle == AppLifecycleState.resumed;
   }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final GoRouter? router = GoRouter.maybeOf(context);
+    if (!identical(router, _router)) {
+      _router?.routerDelegate.removeListener(_onRouteChanged);
+      _router = router;
+      router?.routerDelegate.addListener(_onRouteChanged);
+      _playerVisible = _isPlayerRouteDisplayed();
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final bool foreground = state == AppLifecycleState.resumed;
+    if (foreground == _appInForeground) return;
+    _appInForeground = foreground;
+    if (!foreground) _leavePlayer();
+  }
+
+  /// `true` uniquement quand la route réellement au premier plan est
+  /// l'onglet Lecteur — `false` sur Découverte/Espace (IndexedStack) comme
+  /// sous une route racine poussée par-dessus la coque (/settings, fiche
+  /// artiste...). Sans GoRouter (widget testé isolément) : visible.
+  bool _isPlayerRouteDisplayed() {
+    final GoRouter? router = _router;
+    if (router == null) return true;
+    return router.routerDelegate.currentConfiguration.uri.path == '/player';
+  }
+
+  void _onRouteChanged() {
+    final bool visible = _isPlayerRouteDisplayed();
+    if (visible == _playerVisible) return;
+    _playerVisible = visible;
+    if (!visible) _leavePlayer();
+  }
+
+  /// Sortie du Lecteur (changement d'onglet, route poussée, arrière-plan) :
+  /// Timer annulé, Focus quitté (NavigationBar rendue par `_TabShell`), et
+  /// plus aucun passage automatique en Focus tant que l'utilisateur n'aura
+  /// pas de nouveau touché le Lecteur.
+  void _leavePlayer() {
+    _inactivityTimer?.cancel();
+    _inactivityTimer = null;
+    _armedByUser = false;
+    if (!mounted || !ref.read(playerImmersiveModeProvider)) return;
+    // Le `routerDelegate` peut notifier pendant une phase de build/layout :
+    // modifier un provider Riverpod à ce moment-là lève une exception, d'où
+    // le report à la fin de la frame dans ce cas précis.
+    if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) ref.read(playerImmersiveModeProvider.notifier).set(false);
+      });
+    } else {
+      ref.read(playerImmersiveModeProvider.notifier).set(false);
+    }
+  }
+
+  bool get _canAutoFocus => _playerVisible && _appInForeground && widget.player.currentTrack != null;
 
   @override
   void didUpdateWidget(covariant _PlayerPage oldWidget) {
@@ -245,21 +348,23 @@ class _PlayerPageState extends ConsumerState<_PlayerPage>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _router?.routerDelegate.removeListener(_onRouteChanged);
     _inactivityTimer?.cancel();
+    _inactivityTimer = null;
     _floatController.dispose();
     super.dispose();
   }
 
   void _scheduleInactivity() {
     _inactivityTimer?.cancel();
-    if (widget.player.currentTrack == null) return;
+    _inactivityTimer = null;
+    if (!_armedByUser || !_canAutoFocus) return;
     _inactivityTimer = Timer(_inactivityDelay, _enterImmersive);
   }
 
   void _enterImmersive() {
-    if (!mounted ||
-        ref.read(playerImmersiveModeProvider) ||
-        widget.player.currentTrack == null) {
+    if (!mounted || ref.read(playerImmersiveModeProvider) || !_canAutoFocus) {
       return;
     }
     // Ergonomie navigation Android (2.A) : masque aussi la barre système
@@ -284,6 +389,7 @@ class _PlayerPageState extends ConsumerState<_PlayerPage>
   }
 
   void _onAnyInteraction() {
+    _armedByUser = true;
     if (!ref.read(playerImmersiveModeProvider)) _scheduleInactivity();
   }
 

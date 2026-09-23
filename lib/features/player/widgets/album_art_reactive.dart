@@ -5,17 +5,44 @@ import 'package:flutter/material.dart';
 /// Cover art : s'agrandit avec drop-shadow au Play, rétrécit de 5% au Pause.
 /// `imagePath` est double-usage (voir Tracks.coverArtPath) : chemin fichier
 /// local extrait des tags ID3, ou URL HD renvoyée par l'enrichissement iTunes.
-class AlbumArtReactive extends StatelessWidget {
+///
+/// Stabilité d'affichage (bug QA "pochette qui clignote") :
+///  - l'[ImageProvider] est mis en cache dans le `State` et n'est recréé que
+///    si le chemin change réellement — jamais sur un simple rebuild lié au
+///    PlayerState (play/pause, position, boutons) ;
+///  - `gaplessPlayback` garde l'image précédente affichée pendant le
+///    décodage d'une nouvelle, au lieu d'un cadre vide intermédiaire ;
+///  - l'image elle-même vit dans un `RepaintBoundary` : l'animation d'échelle
+///    ou d'ombre au play/pause ne la repeint pas.
+class AlbumArtReactive extends StatefulWidget {
   const AlbumArtReactive({super.key, required this.imagePath, this.isPlaying = false});
 
   final String? imagePath;
   final bool isPlaying;
 
   @override
+  State<AlbumArtReactive> createState() => _AlbumArtReactiveState();
+}
+
+class _AlbumArtReactiveState extends State<AlbumArtReactive> {
+  String? _cachedPath;
+  ImageProvider? _cachedImage;
+
+  ImageProvider? _imageFor(String? path) {
+    if (path == _cachedPath) return _cachedImage;
+    _cachedPath = path;
+    _cachedImage = (path == null || path.isEmpty)
+        ? null
+        : (path.startsWith('http') ? NetworkImage(path) : FileImage(File(path))) as ImageProvider;
+    return _cachedImage;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final String? path = imagePath;
-    final ImageProvider? image =
-        (path == null || path.isEmpty) ? null : (path.startsWith('http') ? NetworkImage(path) : FileImage(File(path)));
+    final ImageProvider? image = _imageFor(widget.imagePath);
+    final bool isPlaying = widget.isPlaying;
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final Widget placeholder = Icon(Icons.music_note, size: 96, color: colors.onSurfaceVariant);
 
     return AnimatedScale(
       scale: isPlaying ? 1.0 : 0.95,
@@ -32,18 +59,20 @@ class AlbumArtReactive extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           child: Hero(
             tag: 'album-art',
-            child: Container(
-              width: 280,
-              height: 280,
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              child: image == null
-                  ? Icon(Icons.music_note, size: 96, color: Theme.of(context).colorScheme.onSurfaceVariant)
-                  : Image(
-                      image: image,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) =>
-                          Icon(Icons.music_note, size: 96, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                    ),
+            child: RepaintBoundary(
+              child: Container(
+                width: 280,
+                height: 280,
+                color: colors.surfaceContainerHighest,
+                child: image == null
+                    ? placeholder
+                    : Image(
+                        image: image,
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                        errorBuilder: (context, error, stackTrace) => placeholder,
+                      ),
+              ),
             ),
           ),
         ),

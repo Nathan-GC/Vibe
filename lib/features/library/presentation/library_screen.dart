@@ -369,23 +369,34 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               tooltip: 'Enrichir les pochettes et genres manquants',
               onPressed: _busy ? null : _enrichLibrary,
             ),
-            IconButton(
-              icon: const Icon(Icons.people_outline),
-              tooltip: 'Fusionner les artistes en double (casse)',
-              onPressed: _busy ? null : _mergeArtists,
-            ),
           ],
         ),
         body: Column(
           children: [
+            // Zone d'importation : import des fichiers + fusion des artistes
+            // (déplacée depuis les Réglages) — les doublons d'artistes
+            // apparaissent justement après un import.
             Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
               child: SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
                   icon: const Icon(Icons.upload_file_outlined),
                   label: const Text('Importer des MP3'),
                   onPressed: _busy ? null : _importFiles,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.people_outline),
+                  label: const Text('Fusionner des artistes'),
+                  onPressed: _busy
+                      ? null
+                      : () => context.push('/space/library/artist-fusion'),
                 ),
               ),
             ),

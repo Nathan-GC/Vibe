@@ -7,6 +7,7 @@ import '../core/audio_engine/player_immersive_mode_provider.dart';
 import '../features/discovery/presentation/artist_profile_screen.dart';
 import '../features/discovery/presentation/discovery_screen.dart';
 import '../features/discovery/presentation/import_screen.dart';
+import '../features/library/presentation/artist_fusion_screen.dart';
 import '../features/library/presentation/duplicate_tracks_screen.dart';
 import '../features/library/presentation/library_screen.dart';
 import '../features/library/presentation/orphan_cleanup_screen.dart';
@@ -15,7 +16,6 @@ import '../features/player/presentation/master_player_screen.dart';
 import '../features/playlists/presentation/editor/playlist_editor_screen.dart';
 import '../features/playlists/presentation/personal_space_screen.dart';
 import '../features/playlists/presentation/vibe_customizer/vibe_customizer_screen.dart';
-import '../features/settings/presentation/artist_fusion_screen.dart';
 import '../features/settings/presentation/settings_screen.dart';
 
 final GoRouter appRouter = GoRouter(
@@ -26,9 +26,6 @@ final GoRouter appRouter = GoRouter(
         builder: (context, state) => const OnboardingScreen()),
     GoRoute(
         path: '/settings', builder: (context, state) => const SettingsScreen()),
-    GoRoute(
-        path: '/settings/artist-fusion',
-        builder: (context, state) => const ManualArtistFusionScreen()),
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) =>
           _TabShell(navigationShell: navigationShell),
@@ -83,6 +80,11 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
         path: '/space/library/duplicates',
         builder: (context, state) => const DuplicateTracksScreen()),
+    // Fusion d'artistes : déplacée des Réglages vers la zone d'importation
+    // de la Bibliothèque (voir LibraryScreen).
+    GoRoute(
+        path: '/space/library/artist-fusion',
+        builder: (context, state) => const ArtistFusionScreen()),
   ],
 );
 
@@ -163,11 +165,15 @@ class _TabShell extends ConsumerWidget {
       onPopInvokedWithResult: (bool didPop, Object? result) {
         if (didPop) return;
         if (!onPlayerTab) {
+          // Jamais de retour direct en Focus (voir onDestinationSelected).
+          if (ref.read(playerImmersiveModeProvider)) {
+            ref.read(playerImmersiveModeProvider.notifier).set(false);
+          }
           navigationShell.goBranch(_playerTabIndex);
           // Déclencheur 3 : retour vers l'onglet Lecteur depuis le bouton
           // Retour Android — réapplique immédiatement plutôt que de compter
           // sur une reconstruction ultérieure de `_TabShell`.
-          _syncSystemUiMode(onPlayerTab: true, isImmersive: ref.read(playerImmersiveModeProvider));
+          _syncSystemUiMode(onPlayerTab: true, isImmersive: false);
           return;
         }
         if (isImmersive) {
@@ -202,6 +208,14 @@ class _TabShell extends ConsumerWidget {
                   child: NavigationBar(
                     selectedIndex: navigationShell.currentIndex,
                     onDestinationSelected: (index) {
+                      // Quitter l'onglet Lecteur sort toujours du Focus : le
+                      // retour sur le Lecteur ne doit jamais réafficher un
+                      // mode Focus resté actif en arrière-plan. Le Timer
+                      // d'inactivité, lui, est annulé côté `_PlayerPageState`
+                      // (écoute du routerDelegate, master_player_screen.dart).
+                      if (index != _playerTabIndex && ref.read(playerImmersiveModeProvider)) {
+                        ref.read(playerImmersiveModeProvider.notifier).set(false);
+                      }
                       navigationShell.goBranch(index);
                       // Déclencheur 4 : bascule d'onglet via la barre de
                       // navigation — le point d'entrée le plus courant pour
@@ -210,7 +224,7 @@ class _TabShell extends ConsumerWidget {
                       // couvert par une reconstruction implicite de `_TabShell`.
                       _syncSystemUiMode(
                         onPlayerTab: index == _playerTabIndex,
-                        isImmersive: ref.read(playerImmersiveModeProvider),
+                        isImmersive: index == _playerTabIndex && ref.read(playerImmersiveModeProvider),
                       );
                     },
                     destinations: const [

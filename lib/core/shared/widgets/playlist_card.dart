@@ -25,11 +25,25 @@ Future<void> playPlaylistAndNavigate(BuildContext context, WidgetRef ref, Playli
 /// carrée en haut, titre en gras et sous-titre gris en dessous. Utilisée
 /// aussi bien dans les carrousels horizontaux (Mon espace, Découverte) qu'en
 /// grille.
+///
+/// Convention de gestes commune à toute l'app (playlists, artistes,
+/// morceaux) :
+///  - appui simple = action principale, IMMÉDIATE (lecture depuis une
+///    pochette, ouverture depuis un titre) — jamais conditionnée à un appui
+///    long préalable ;
+///  - appui long = vue détaillée/actions secondaires (éditeur de playlist,
+///    fiche artiste, feuille d'actions d'un morceau), jamais une lecture.
+/// Exception : les listes réordonnables (file d'attente, éditeur de
+/// playlist) où l'appui long reste réservé au glisser-déposer.
 class PlaylistCard extends StatelessWidget {
-  const PlaylistCard({super.key, required this.playlist, this.onTap, this.onImageTap, this.width = 152});
+  const PlaylistCard(
+      {super.key, required this.playlist, this.onTap, this.onImageTap, this.onLongPress, this.width = 152});
 
   final Playlist playlist;
   final VoidCallback? onTap;
+  // Appui long (voir convention ci-dessus) : vue détaillée, sur toute la
+  // carte pochette comprise.
+  final VoidCallback? onLongPress;
   // Section 3.3 : appui sur la pochette = lecture immédiate, distinct du
   // reste de la carte (titre/sous-titre) qui garde [onTap] (édition). Retombe
   // sur [onTap] si non fourni, pour rester compatible avec un appelant qui ne
@@ -44,6 +58,7 @@ class PlaylistCard extends StatelessWidget {
       child: InkWell(
         borderRadius: const BorderRadius.all(Radius.circular(AppRadii.card)),
         onTap: onTap,
+        onLongPress: onLongPress,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -52,6 +67,7 @@ class PlaylistCard extends StatelessWidget {
               child: InkWell(
                 borderRadius: const BorderRadius.all(Radius.circular(AppRadii.card)),
                 onTap: onImageTap ?? onTap,
+                onLongPress: onLongPress,
                 child: PlaylistCoverImage(playlist: playlist),
               ),
             ),

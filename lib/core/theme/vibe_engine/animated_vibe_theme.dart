@@ -72,6 +72,10 @@ class _VibeVisualTween extends Tween<VibeVisual> {
       // pendant tout le fondu (800ms) — plantage réel reproduit en rafale de
       // "suivant" rapprochés : "'renderObject.child == child': is not true."
       customBackgroundVideoPath: t < 0.5 ? a.customBackgroundVideoPath : b.customBackgroundVideoPath,
+      // Même oubli que `customBackgroundVideoPath` ci-dessus : retombait sur
+      // `true` (défaut du constructeur) pendant toute transition — une
+      // pochette masquée réapparaissait brièvement à chaque changement.
+      showCoverImage: t < 0.5 ? a.showCoverImage : b.showCoverImage,
     );
   }
 }

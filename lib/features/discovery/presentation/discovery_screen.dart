@@ -287,6 +287,7 @@ class _SuggestionsPanel extends ConsumerWidget {
                             playlist: data[index],
                             onTap: () => context.push('/space/playlist/${data[index].id}/edit'),
                             onImageTap: () => playPlaylistAndNavigate(context, ref, data[index]),
+                            onLongPress: () => context.push('/space/playlist/${data[index].id}/edit'),
                           ),
                         ),
                       ),
@@ -342,10 +343,18 @@ class _SuggestionsPanel extends ConsumerWidget {
 /// [TopArtistPlaylist]) : la Vibe retombe simplement sur le repli neutre
 /// (voir `activeVibeProvider`), sans incidence puisque Découverte n'a jamais
 /// d'effet sur la Vibe.
+///
+/// Bug QA "le tap ne lance la lecture qu'après un appui long" : l'ancienne
+/// version attendait `ref.read(artistTracksProvider(...).future)`. Sans
+/// listener actif, Riverpod met ce StreamProvider en pause et le `Future` ne
+/// se résout jamais — sauf si la fiche artiste (appui long) avait déjà
+/// écouté ce même provider juste avant. Lecture directe du repository, comme
+/// `AddByArtistSheet._addArtist` qui avait rencontré le même piège.
 Future<void> _playTopArtistPlaylist(BuildContext context, WidgetRef ref, TopArtistPlaylist playlist) async {
-  final List<Track> tracks = await ref.read(
-    artistTracksProvider((artistName: playlist.artistName, filter: ArtistFilter.all, sort: ArtistSort.chronological)).future,
-  );
+  final List<Track> tracks = await ref
+      .read(artistRepositoryProvider)
+      .watchArtistTracks(playlist.artistName, filter: ArtistFilter.all, sort: ArtistSort.chronological)
+      .first;
   if (tracks.isEmpty) return;
   await ref.read(playerControllerProvider.notifier).playPlaylist('discovery-artist-${playlist.artistName}', tracks);
   if (context.mounted) context.go('/player');
@@ -441,6 +450,7 @@ class _ResultTile extends StatelessWidget {
           leading: const Icon(Icons.person_outline),
           title: Text(artistName),
           onTap: () => context.push('/discovery/artist/$artistName'),
+          onLongPress: () => context.push('/discovery/artist/$artistName'),
         ),
       OnlineTrackSearchResult(:final track) => OnlineTrackCard(track: track),
     };

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 /// Layer B : presets visuels appliqués par playlist, indépendants du thème global.
@@ -203,4 +204,33 @@ class VibeVisual {
   // — quand non nulle, remplace entièrement le rendu shader/dégradé/[effect]
   // du Master Player (voir MasterPlayerScreen), jamais superposée à celui-ci.
   final String? customBackgroundVideoPath;
+
+  // Égalité par valeur (bug QA "pochette qui clignote") : `resolvedVibe`
+  // construit une nouvelle instance à chaque appel, donc sans `==`
+  // `AnimatedVibeTheme` (ImplicitlyAnimatedWidget) voyait une "nouvelle"
+  // Vibe à CHAQUE rebuild du Master Player (play/pause, position...) et
+  // relançait sa transition de 800ms — reconstruisant tout le PageView à
+  // chaque frame pour rien, pochette comprise.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is VibeVisual &&
+          listEquals(other.gradientColors, gradientColors) &&
+          other.accentColor == accentColor &&
+          other.backgroundImagePath == backgroundImagePath &&
+          other.showCoverImage == showCoverImage &&
+          other.preset == preset &&
+          other.effect == effect &&
+          other.customBackgroundVideoPath == customBackgroundVideoPath;
+
+  @override
+  int get hashCode => Object.hash(
+        Object.hashAll(gradientColors),
+        accentColor,
+        backgroundImagePath,
+        showCoverImage,
+        preset,
+        effect,
+        customBackgroundVideoPath,
+      );
 }

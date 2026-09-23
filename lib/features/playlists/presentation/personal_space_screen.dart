@@ -98,6 +98,7 @@ class PersonalSpaceScreen extends ConsumerWidget {
                     playlist: data[index],
                     onTap: () => context.push('/space/playlist/${data[index].id}/edit'),
                     onImageTap: () => playPlaylistAndNavigate(context, ref, data[index]),
+                    onLongPress: () => context.push('/space/playlist/${data[index].id}/edit'),
                   ),
                 ),
               ),
@@ -163,6 +164,7 @@ class _PlaylistTile extends ConsumerWidget {
       title: Text(playlist.title),
       subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
       onTap: () => context.push('/space/playlist/${playlist.id}/edit'),
+      onLongPress: () => context.push('/space/playlist/${playlist.id}/edit'),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
