@@ -10,6 +10,8 @@ import '../../../core/theme/vibe_engine/playlist_vibe_resolver.dart';
 import '../../../core/theme/vibe_engine/vibe_engine.dart';
 import '../data/playlist_providers.dart';
 import '../data/playlist_repository.dart';
+import 'export/playlist_export_flow.dart';
+import 'import/playlist_json_import_flow.dart';
 
 /// Tab 3 : bibliothèque de playlists locales — accès à l'éditeur, au Vibe
 /// Customizer, à "Pour compléter..." (Étape 4), et lecture directe.
@@ -57,10 +59,23 @@ class PersonalSpaceScreen extends ConsumerWidget {
         ),
         title: const Text('Mon espace'),
         actions: [
-          IconButton(
+          PopupMenuButton<_AddAction>(
             icon: const Icon(Icons.add),
             tooltip: 'Nouvelle playlist',
-            onPressed: () => _createPlaylist(context, ref),
+            onSelected: (action) => switch (action) {
+              _AddAction.create => _createPlaylist(context, ref),
+              _AddAction.importJson => PlaylistJsonImportFlow.pickAndImport(context, ref),
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: _AddAction.create,
+                child: ListTile(leading: Icon(Icons.playlist_add), title: Text('Nouvelle playlist')),
+              ),
+              PopupMenuItem(
+                value: _AddAction.importJson,
+                child: ListTile(leading: Icon(Icons.file_open_outlined), title: Text('Importer une playlist (.json)')),
+              ),
+            ],
           ),
           IconButton(
             icon: const Icon(Icons.folder_outlined),
@@ -120,7 +135,7 @@ class _PlaylistTile extends ConsumerWidget {
   /// Playlists système : recréées/gérées automatiquement par l'app (voir
   /// [kAllImportedPlaylistId], [kLikedPlaylistId]), jamais renommables ni
   /// supprimables depuis ce menu.
-  bool get _isSystemPlaylist => playlist.id == kAllImportedPlaylistId || playlist.id == kLikedPlaylistId;
+  bool get _isSystemPlaylist => !PlaylistExportFlow.isExportable(playlist);
 
   Future<void> _rename(BuildContext context, WidgetRef ref) async {
     final String? title = await showDialog<String>(
@@ -173,29 +188,27 @@ class _PlaylistTile extends ConsumerWidget {
             tooltip: 'Vibe',
             onPressed: () => context.push('/space/playlist/${playlist.id}/vibe'),
           ),
-          PopupMenuButton<_PlaylistAction>(
-            onSelected: (action) async {
-              switch (action) {
-                case _PlaylistAction.export:
-                  final file = await ref.read(playlistManifestServiceProvider).exportManifestToFile(playlist.id);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Exporté : ${file.path}')));
-                  }
-                case _PlaylistAction.rename:
-                  await _rename(context, ref);
-                case _PlaylistAction.delete:
-                  await _delete(context, ref);
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: _PlaylistAction.export, child: Text('Exporter en JSON')),
-              if (!_isSystemPlaylist) ...[
-                const PopupMenuDivider(),
-                const PopupMenuItem(value: _PlaylistAction.rename, child: Text('Renommer la playlist')),
-                const PopupMenuItem(value: _PlaylistAction.delete, child: Text('Supprimer la playlist')),
+          // Sélections système ("Titres likés", "Tous les titres importés") :
+          // ni export, ni renommage, ni suppression — menu absent.
+          if (!_isSystemPlaylist)
+            PopupMenuButton<_PlaylistAction>(
+              onSelected: (action) async {
+                switch (action) {
+                  case _PlaylistAction.export:
+                    await PlaylistExportFlow.run(context, ref, playlist);
+                  case _PlaylistAction.rename:
+                    await _rename(context, ref);
+                  case _PlaylistAction.delete:
+                    await _delete(context, ref);
+                }
+              },
+              itemBuilder: (context) => const [
+                PopupMenuItem(value: _PlaylistAction.export, child: Text('Exporter en JSON')),
+                PopupMenuDivider(),
+                PopupMenuItem(value: _PlaylistAction.rename, child: Text('Renommer la playlist')),
+                PopupMenuItem(value: _PlaylistAction.delete, child: Text('Supprimer la playlist')),
               ],
-            ],
-          ),
+            ),
         ],
       ),
     );
@@ -203,6 +216,8 @@ class _PlaylistTile extends ConsumerWidget {
 }
 
 enum _PlaylistAction { export, rename, delete }
+
+enum _AddAction { create, importJson }
 
 /// Contenu de la boîte "Renommer la playlist", en `StatefulWidget` distinct
 /// pour que son `TextEditingController` soit disposé par `State.dispose()`

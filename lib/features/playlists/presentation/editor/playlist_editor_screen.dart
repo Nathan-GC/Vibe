@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../../core/shared/widgets/local_track_picker_sheet.dart';
 import '../../../../core/shared/widgets/playlist_cover_image.dart';
 import '../../../../core/shared/widgets/track_actions_sheet.dart';
 import '../../../../core/storage/database/app_database.dart';
@@ -79,6 +80,57 @@ class _PlaylistEditorScreenState extends ConsumerState<PlaylistEditorScreen> {
     if (mounted) await _refreshLocalOrder();
   }
 
+  /// Titre grisé (import JSON sans morceau local) : l'associer à un morceau
+  /// de la bibliothèque, ou le retirer de la playlist.
+  Future<void> _openMissingActions(PlaylistMissingTrack missing) async {
+    final _MissingAction? action = await showModalBottomSheet<_MissingAction>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: Text(missing.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: Text('${missing.artist} · introuvable dans ta bibliothèque'),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.link),
+              title: const Text('Associer à un morceau de ma bibliothèque'),
+              onTap: () => Navigator.of(context).pop(_MissingAction.link),
+            ),
+            ListTile(
+              leading: const Icon(Icons.remove_circle_outline),
+              title: const Text('Retirer de la playlist'),
+              onTap: () => Navigator.of(context).pop(_MissingAction.remove),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (action == null || !mounted) return;
+
+    switch (action) {
+      case _MissingAction.link:
+        final Set<String> inPlaylist = {
+          for (final PlaylistEditorEntry entry in _localOrder ?? const [])
+            if (entry.track != null) entry.track!.id,
+        };
+        final Track? picked = await LocalTrackPickerSheet.show(
+          context,
+          title: 'Associer « ${missing.title} »',
+          initialQuery: missing.title,
+          unavailableIds: inPlaylist,
+          unavailableLabel: 'Déjà dans la playlist',
+        );
+        if (picked == null) return;
+        await ref.read(playlistRepositoryProvider).linkMissingEntry(missing.id, picked.id);
+      case _MissingAction.remove:
+        await ref.read(playlistRepositoryProvider).removeMissingEntry(missing.id);
+    }
+    if (mounted) await _refreshLocalOrder();
+  }
+
   Future<void> _openAddByArtist() async {
     await AddByArtistSheet.show(context, widget.playlistId);
     if (mounted) await _refreshLocalOrder();
@@ -100,8 +152,9 @@ class _PlaylistEditorScreenState extends ConsumerState<PlaylistEditorScreen> {
     if (_localOrder == null) return;
     setState(() => _saving = true);
 
-    final List<String> orderedIds = _localOrder!.map((e) => e.track.id).toList();
-    await ref.read(playlistRepositoryProvider).commitOrder(widget.playlistId, orderedIds);
+    // Titres grisés compris : ils gardent la place où l'utilisateur les a
+    // déplacés (numérotation commune, voir PlaylistMissingTracks).
+    await ref.read(playlistRepositoryProvider).commitOrder(widget.playlistId, _localOrder!);
 
     if (!mounted) return;
     setState(() {
@@ -160,24 +213,59 @@ class _PlaylistEditorScreenState extends ConsumerState<PlaylistEditorScreen> {
                   );
                 }
 
-                return ReorderableListView.builder(
-                  // Poignée de drag explicite (voir _EditorTile) plutôt que le
-                  // comportement par défaut (glisser-déposer déclenché par un
-                  // appui long sur toute la tuile) : cette tuile a déjà son
-                  // propre `onLongPress` (ouvre TrackActionsSheet), et les deux
-                  // gestes en appui long entraient en conflit dans l'arène de
-                  // gestes — bug réel reproduit : le drag ne démarrait jamais
-                  // de façon fiable. Isoler le drag sur l'icône dédiée lève
-                  // l'ambiguïté.
-                  buildDefaultDragHandles: false,
-                  itemCount: list.length,
-                  onReorderItem: _reorder,
-                  itemBuilder: (context, index) => _EditorTile(
-                    key: ValueKey(list[index].track.id),
-                    index: index,
-                    entry: list[index],
-                    onLongPress: () => _openTrackActions(list[index].track),
-                  ),
+                final int missingCount = list.where((e) => e.isMissing).length;
+                return Column(
+                  children: [
+                    if (missingCount > 0)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                        child: Row(
+                          children: [
+                            Icon(Icons.info_outline, size: 18, color: Theme.of(context).colorScheme.outline),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '$missingCount titre${missingCount > 1 ? 's' : ''} introuvable${missingCount > 1 ? 's' : ''} '
+                                '(grisé${missingCount > 1 ? 's' : ''}) : sauté${missingCount > 1 ? 's' : ''} à la lecture, '
+                                'associé${missingCount > 1 ? 's' : ''} automatiquement dès l\'ajout du fichier à ta bibliothèque.',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    Expanded(
+                      child: ReorderableListView.builder(
+                        // Poignée de drag explicite (voir _EditorTile) plutôt que le
+                        // comportement par défaut (glisser-déposer déclenché par un
+                        // appui long sur toute la tuile) : cette tuile a déjà son
+                        // propre `onLongPress` (ouvre TrackActionsSheet), et les deux
+                        // gestes en appui long entraient en conflit dans l'arène de
+                        // gestes — bug réel reproduit : le drag ne démarrait jamais
+                        // de façon fiable. Isoler le drag sur l'icône dédiée lève
+                        // l'ambiguïté.
+                        buildDefaultDragHandles: false,
+                        itemCount: list.length,
+                        onReorderItem: _reorder,
+                        itemBuilder: (context, index) {
+                          final PlaylistEditorEntry entry = list[index];
+                          final Track? track = entry.track;
+                          return _EditorTile(
+                            key: ValueKey(entry.key),
+                            index: index,
+                            entry: entry,
+                            // Titre grisé : appui simple ET long ouvrent ses
+                            // actions (associer / retirer) — il n'a pas d'autre
+                            // action principale, n'étant pas lisible.
+                            onTap: track == null ? () => _openMissingActions(entry.missing!) : null,
+                            onLongPress: track != null
+                                ? () => _openTrackActions(track)
+                                : () => _openMissingActions(entry.missing!),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 );
               },
               loading: () => const Center(child: CircularProgressIndicator()),
@@ -233,15 +321,23 @@ class _CoverHeader extends StatelessWidget {
   }
 }
 
+enum _MissingAction { link, remove }
+
 class _EditorTile extends StatelessWidget {
-  const _EditorTile({super.key, required this.index, required this.entry, required this.onLongPress});
+  const _EditorTile({super.key, required this.index, required this.entry, required this.onLongPress, this.onTap});
 
   final int index;
   final PlaylistEditorEntry entry;
   final VoidCallback onLongPress;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    // Titre grisé : couleur atténuée (texte ET icônes), mention
+    // "introuvable" — reste déplaçable pour garder sa place dans l'ordre.
+    final bool missing = entry.isMissing;
+    final Color? dimmed = missing ? Theme.of(context).disabledColor : null;
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
@@ -249,9 +345,16 @@ class _EditorTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
       ),
       child: ListTile(
-        title: Text(entry.track.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-        subtitle: Text(entry.track.artists.join(', '), maxLines: 1, overflow: TextOverflow.ellipsis),
-        trailing: ReorderableDragStartListener(index: index, child: const Icon(Icons.drag_handle)),
+        leading: missing ? Icon(Icons.link_off, color: dimmed) : null,
+        title: Text(entry.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: dimmed)),
+        subtitle: Text(
+          missing ? '${entry.artistLabel} · introuvable' : entry.artistLabel,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: dimmed, fontStyle: missing ? FontStyle.italic : null),
+        ),
+        trailing: ReorderableDragStartListener(index: index, child: Icon(Icons.drag_handle, color: dimmed)),
+        onTap: onTap,
         onLongPress: onLongPress,
       ),
     );

@@ -23,7 +23,14 @@ abstract class PlaylistRepository {
   /// jamais directement au `manifest.id` entrant.
   Future<Playlist?> findBySourceManifestId(String manifestId);
 
+  /// Toutes les lignes de la playlist dans l'ordre d'affichage : morceaux de
+  /// la bibliothèque ET titres importés introuvables (grisés, voir
+  /// [PlaylistEditorEntry.isMissing]). Réagit aux changements des deux tables.
   Stream<List<PlaylistEditorEntry>> watchEditorEntries(String playlistId);
+
+  /// Morceaux LISIBLES uniquement, dans l'ordre — les titres grisés sont
+  /// exclus : c'est ce qui les fait sauter par le lecteur (file d'attente
+  /// construite à partir de cette liste).
   Future<List<Track>> fetchOrderedTracks(String playlistId);
 
   /// Crée une playlist locale vide (Tab 3 — pas de fork/import), prête à être
@@ -35,8 +42,19 @@ abstract class PlaylistRepository {
   Future<Playlist> ensureLikedPlaylist();
 
   /// Persiste l'ordre après édition : purge `is_pending_placement`, écrit les
-  /// `position`, incrémente `version` (Étape 5 — "Commit Edits").
-  Future<void> commitOrder(String playlistId, List<String> orderedTrackIds);
+  /// `position` (morceaux ET titres grisés, dans une numérotation commune),
+  /// incrémente `version` (Étape 5 — "Commit Edits").
+  Future<void> commitOrder(String playlistId, List<PlaylistEditorEntry> orderedEntries);
+
+  /// Associe manuellement un titre grisé à un morceau de la bibliothèque :
+  /// il devient une entrée lisible à la même position. Sans effet sur la
+  /// position si le morceau est déjà dans la playlist (le titre grisé est
+  /// alors simplement retiré, une playlist ne contenant jamais deux fois le
+  /// même morceau).
+  Future<void> linkMissingEntry(int missingId, String trackId);
+
+  /// Retire un titre grisé de la playlist.
+  Future<void> removeMissingEntry(int missingId);
 
   Future<void> updateVibeStyle(String playlistId, VibePreset vibeStyle);
 
@@ -63,7 +81,8 @@ abstract class PlaylistRepository {
   /// de la politique d'affichage.
   Future<void> renamePlaylist(String playlistId, String title);
 
-  /// Supprime une playlist locale ainsi que ses liaisons `playlist_tracks` —
+  /// Supprime une playlist locale ainsi que ses liaisons `playlist_tracks` et
+  /// ses titres grisés —
   /// les morceaux eux-mêmes ne sont jamais supprimés (ils restent rattachés
   /// à [kAllImportedPlaylistId] et à leurs autres playlists). Même remarque
   /// que [renamePlaylist] sur les playlists système : à bloquer côté UI.

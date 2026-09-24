@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/identity/track_match_key.dart';
 import '../../../core/storage/database/track_repository.dart';
 import '../../discovery/data/artist_providers.dart';
 import '../../discovery/domain/top_artist_playlist.dart';
@@ -35,20 +36,7 @@ enum ArtistFusionMode { automatic, manual }
 
 /// Repli minuscule + sans accents pour la recherche ("beyonce" trouve
 /// "Beyoncé", "ANGELE" trouve "Angèle").
-String foldForArtistSearch(String input) {
-  const String from = 'àáâãäåçèéêëìíîïñòóôõöùúûüýÿœæ';
-  const List<String> to = [
-    'a', 'a', 'a', 'a', 'a', 'a', 'c', 'e', 'e', 'e', 'e', 'i', 'i', 'i', 'i', 'n', //
-    'o', 'o', 'o', 'o', 'o', 'u', 'u', 'u', 'u', 'y', 'y', 'oe', 'ae',
-  ];
-  final StringBuffer buffer = StringBuffer();
-  for (final int rune in input.toLowerCase().trim().runes) {
-    final String char = String.fromCharCode(rune);
-    final int index = from.indexOf(char);
-    buffer.write(index == -1 ? char : to[index]);
-  }
-  return buffer.toString();
-}
+String foldForArtistSearch(String input) => foldDiacritics(input.trim());
 
 class _ArtistFusionScreenState extends ConsumerState<ArtistFusionScreen> {
   final Set<String> _selected = {};

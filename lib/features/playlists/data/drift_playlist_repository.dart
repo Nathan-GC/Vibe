@@ -50,53 +50,111 @@ class DriftPlaylistRepository implements PlaylistRepository {
     return (_db.select(_db.playlists)..where((p) => p.id.equals(kLikedPlaylistId))).getSingle();
   }
 
+  /// Deux tables fusionnées (morceaux + titres grisés) : un simple
+  /// `query.watch()` ne suivrait que l'une d'elles. Réémet à chaque
+  /// modification de l'une des tables concernées.
   @override
-  Stream<List<PlaylistEditorEntry>> watchEditorEntries(String playlistId) {
+  Stream<List<PlaylistEditorEntry>> watchEditorEntries(String playlistId) async* {
+    yield await _loadEntries(playlistId);
+    final Stream<Set<TableUpdate>> updates = _db.tableUpdates(
+      TableUpdateQuery.onAllTables([_db.playlistTracks, _db.playlistMissingTracks, _db.tracks]),
+    );
+    await for (final _ in updates) {
+      yield await _loadEntries(playlistId);
+    }
+  }
+
+  Future<List<PlaylistEditorEntry>> _loadEntries(String playlistId) async {
     final query = _db.select(_db.playlistTracks).join([
       innerJoin(_db.tracks, _db.tracks.id.equalsExp(_db.playlistTracks.trackId)),
     ])
       ..where(_db.playlistTracks.playlistId.equals(playlistId))
       ..orderBy([OrderingTerm.asc(_db.playlistTracks.position)]);
 
-    return query.watch().map((rows) {
-      return rows.map((row) {
-        final PlaylistTrack playlistTrack = row.readTable(_db.playlistTracks);
-        return PlaylistEditorEntry(
+    final List<PlaylistEditorEntry> entries = [
+      for (final row in await query.get())
+        PlaylistEditorEntry(
           track: row.readTable(_db.tracks),
-          isPendingPlacement: playlistTrack.isPendingPlacement,
-          position: playlistTrack.position,
-        );
-      }).toList();
-    });
+          isPendingPlacement: row.readTable(_db.playlistTracks).isPendingPlacement,
+          position: row.readTable(_db.playlistTracks).position,
+        ),
+    ];
+    final List<PlaylistMissingTrack> missing =
+        await (_db.select(_db.playlistMissingTracks)..where((m) => m.playlistId.equals(playlistId))).get();
+    if (missing.isEmpty) return entries;
+
+    // Tri stable : à position égale (cas limite), le morceau lisible passe
+    // avant le titre grisé.
+    return [...entries, ...missing.map(PlaylistEditorEntry.missing)]..sort((a, b) {
+        final int byPosition = a.position.compareTo(b.position);
+        if (byPosition != 0) return byPosition;
+        return (a.isMissing ? 1 : 0).compareTo(b.isMissing ? 1 : 0);
+      });
   }
 
   @override
   Future<List<Track>> fetchOrderedTracks(String playlistId) async {
-    final entries = await watchEditorEntries(playlistId).first;
-    return entries.map((e) => e.track).toList();
+    final List<PlaylistEditorEntry> entries = await _loadEntries(playlistId);
+    return [
+      for (final PlaylistEditorEntry entry in entries)
+        if (entry.track != null) entry.track!,
+    ];
   }
 
   @override
-  Future<void> commitOrder(String playlistId, List<String> orderedTrackIds) {
+  Future<void> commitOrder(String playlistId, List<PlaylistEditorEntry> orderedEntries) {
     return _db.transaction(() async {
       await (_db.delete(_db.playlistTracks)..where((t) => t.playlistId.equals(playlistId))).go();
 
-      if (orderedTrackIds.isNotEmpty) {
-        await _db.batch((batch) {
-          batch.insertAll(_db.playlistTracks, [
-            for (int i = 0; i < orderedTrackIds.length; i++)
-              PlaylistTracksCompanion.insert(
-                playlistId: playlistId,
-                trackId: orderedTrackIds[i],
-                position: i,
-                isPendingPlacement: const Value(false),
-              ),
-          ]);
-        });
+      final List<PlaylistTracksCompanion> rows = [];
+      for (int i = 0; i < orderedEntries.length; i++) {
+        final PlaylistEditorEntry entry = orderedEntries[i];
+        final Track? track = entry.track;
+        if (track != null) {
+          rows.add(PlaylistTracksCompanion.insert(
+            playlistId: playlistId,
+            trackId: track.id,
+            position: i,
+            isPendingPlacement: const Value(false),
+          ));
+        } else {
+          await (_db.update(_db.playlistMissingTracks)..where((m) => m.id.equals(entry.missing!.id)))
+              .write(PlaylistMissingTracksCompanion(position: Value(i)));
+        }
       }
+      if (rows.isNotEmpty) await _db.batch((batch) => batch.insertAll(_db.playlistTracks, rows));
 
       await _bumpVersion(playlistId);
     });
+  }
+
+  @override
+  Future<void> linkMissingEntry(int missingId, String trackId) {
+    return _db.transaction(() async {
+      final PlaylistMissingTrack? missing =
+          await (_db.select(_db.playlistMissingTracks)..where((m) => m.id.equals(missingId))).getSingleOrNull();
+      if (missing == null) return;
+      final bool alreadyInPlaylist = await (_db.select(_db.playlistTracks)
+            ..where((t) => t.playlistId.equals(missing.playlistId) & t.trackId.equals(trackId)))
+          .getSingleOrNull()
+          .then((row) => row != null);
+      if (!alreadyInPlaylist) {
+        await _db.into(_db.playlistTracks).insert(
+              PlaylistTracksCompanion.insert(
+                playlistId: missing.playlistId,
+                trackId: trackId,
+                position: missing.position,
+                isPendingPlacement: const Value(false),
+              ),
+            );
+      }
+      await (_db.delete(_db.playlistMissingTracks)..where((m) => m.id.equals(missingId))).go();
+    });
+  }
+
+  @override
+  Future<void> removeMissingEntry(int missingId) {
+    return (_db.delete(_db.playlistMissingTracks)..where((m) => m.id.equals(missingId))).go();
   }
 
   @override
@@ -151,6 +209,7 @@ class DriftPlaylistRepository implements PlaylistRepository {
   Future<void> deletePlaylist(String playlistId) {
     return _db.transaction(() async {
       await (_db.delete(_db.playlistTracks)..where((t) => t.playlistId.equals(playlistId))).go();
+      await (_db.delete(_db.playlistMissingTracks)..where((m) => m.playlistId.equals(playlistId))).go();
       await (_db.delete(_db.playlists)..where((p) => p.id.equals(playlistId))).go();
     });
   }

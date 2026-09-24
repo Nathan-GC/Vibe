@@ -218,14 +218,41 @@ class PlaylistTracks extends Table {
   Set<Column> get primaryKey => {playlistId, trackId};
 }
 
-@DriftDatabase(tables: [Tracks, Playlists, PlaylistTracks, TrackArtists])
+/// Titre d'une playlist importée (manifeste JSON) sans morceau local associé
+/// — affiché "grisé" dans la playlist, jamais lu (seuls les
+/// [PlaylistTracks] sont joués, voir `fetchOrderedTracks`).
+///
+/// Table distincte de [PlaylistTracks] plutôt qu'une ligne de celle-ci : sa
+/// clé étrangère `track_id -> tracks.id` impose un morceau réellement présent
+/// en bibliothèque. [position] partage l'espace de numérotation de
+/// `playlist_tracks.position` pour la même playlist : l'ordre d'affichage
+/// fusionne les deux tables, le titre grisé garde ainsi sa place d'origine.
+///
+/// Dégrisage automatique : [TrackRepository.upsertTrack] convertit la ligne
+/// en [PlaylistTracks] (même position) dès qu'un morceau importé correspond
+/// à [sanitizedKey] ou à [matchKey] (titre + artiste normalisés).
+@DataClassName('PlaylistMissingTrack')
+class PlaylistMissingTracks extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get playlistId => text().references(Playlists, #id)();
+  IntColumn get position => integer()();
+  TextColumn get title => text()();
+  TextColumn get artist => text()();
+  TextColumn get album => text().withDefault(const Constant(''))();
+  // `buildSanitizedKey` du manifeste (titre + album + artiste principal).
+  TextColumn get sanitizedKey => text()();
+  // `buildTrackMatchKey` (titre + artiste principal normalisés, sans album).
+  TextColumn get matchKey => text()();
+}
+
+@DriftDatabase(tables: [Tracks, Playlists, PlaylistTracks, TrackArtists, PlaylistMissingTracks])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 11;
+  int get schemaVersion => 12;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -287,6 +314,9 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 11) {
             await m.addColumn(playlists, playlists.showCoverImage);
+          }
+          if (from < 12) {
+            await m.createTable(playlistMissingTracks);
           }
         },
       );

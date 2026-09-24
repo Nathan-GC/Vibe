@@ -9,6 +9,7 @@ import '../metadata_extractor/artist_name_normalizer.dart';
 import '../scanner/scanned_track.dart';
 import 'app_database.dart';
 import 'database_provider.dart';
+import 'missing_playlist_track_reconciler.dart';
 import 'track_enricher.dart';
 
 final Provider<TrackRepository> trackRepositoryProvider = Provider<TrackRepository>((ref) {
@@ -127,6 +128,14 @@ class TrackRepository {
       }
 
       await _linkToAllImportedPlaylist(scanned.id);
+
+      // Dégrisage automatique : ce morceau peut être un titre attendu par
+      // une playlist importée (JSON) — il y redevient lisible, à sa place.
+      await MissingPlaylistTrackReconciler(_db).reconcileTrack(
+        trackId: scanned.id,
+        title: scanned.title,
+        artists: artists,
+      );
     });
   }
 
@@ -222,6 +231,14 @@ class TrackRepository {
       await _db.into(_db.trackArtists).insert(
             TrackArtistsCompanion.insert(trackId: trackId, artistName: normalizedArtist, position: 0),
           );
+
+      // Un Titre/Artiste corrigé à la main peut désormais correspondre à un
+      // titre grisé d'une playlist importée : même dégrisage qu'à l'import.
+      await MissingPlaylistTrackReconciler(_db).reconcileTrack(
+        trackId: trackId,
+        title: title,
+        artists: [normalizedArtist],
+      );
     });
   }
 

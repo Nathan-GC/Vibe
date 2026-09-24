@@ -53,8 +53,9 @@ class _CompositeFallback extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final AsyncValue<List<PlaylistEditorEntry>> entries = ref.watch(playlistEditorEntriesProvider(playlist.id));
     final List<String> covers = (entries.value ?? const [])
+        .where((entry) => entry.track != null)
         .take(4)
-        .map((entry) => entry.track.coverArtPath)
+        .map((entry) => entry.track!.coverArtPath)
         .where((path) => path.isNotEmpty)
         .toList();
 

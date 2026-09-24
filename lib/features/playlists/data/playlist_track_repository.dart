@@ -35,7 +35,7 @@ class PlaylistTrackRepository {
       final List<String> toAdd = trackIds.where((id) => !alreadyPresent.contains(id)).toList();
       if (toAdd.isEmpty) return 0;
 
-      int nextPosition = existing.length;
+      int nextPosition = await _nextPosition(playlistId);
       await _db.batch((batch) {
         batch.insertAll(_db.playlistTracks, [
           for (final trackId in toAdd)
@@ -60,12 +60,24 @@ class PlaylistTrackRepository {
     return query.watch().map((rows) => rows.isNotEmpty);
   }
 
+  /// Position suivant la plus grande position occupée, morceaux ET titres
+  /// grisés confondus (numérotation commune, voir [PlaylistMissingTracks]) —
+  /// plutôt que le simple nombre de morceaux, qui retomberait sur la position
+  /// d'un titre grisé.
   Future<int> _nextPosition(String playlistId) async {
-    final countExp = _db.playlistTracks.trackId.count();
-    final query = _db.selectOnly(_db.playlistTracks)
-      ..addColumns([countExp])
-      ..where(_db.playlistTracks.playlistId.equals(playlistId));
-    final row = await query.getSingle();
-    return row.read(countExp) ?? 0;
+    final maxTrackExp = _db.playlistTracks.position.max();
+    final int? maxTrack = await (_db.selectOnly(_db.playlistTracks)
+          ..addColumns([maxTrackExp])
+          ..where(_db.playlistTracks.playlistId.equals(playlistId)))
+        .getSingle()
+        .then((row) => row.read(maxTrackExp));
+    final maxMissingExp = _db.playlistMissingTracks.position.max();
+    final int? maxMissing = await (_db.selectOnly(_db.playlistMissingTracks)
+          ..addColumns([maxMissingExp])
+          ..where(_db.playlistMissingTracks.playlistId.equals(playlistId)))
+        .getSingle()
+        .then((row) => row.read(maxMissingExp));
+    final int highest = [maxTrack ?? -1, maxMissing ?? -1].reduce((a, b) => a > b ? a : b);
+    return highest + 1;
   }
 }

@@ -1,18 +1,10 @@
-import 'dart:io';
-
 import 'package:dio/dio.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../core/networking/spotify/spotify_credentials.dart';
-import '../../../core/playlist_manifest/manifest_track_ref.dart';
 import '../../../core/playlist_manifest/playlist_manifest.dart';
-import '../../diff/presentation/diff_modal.dart';
-import '../../diff/presentation/missing_track_dialog.dart';
-import '../../playlists/data/playlist_providers.dart';
-import '../../playlists/domain/fork_result.dart';
+import '../../playlists/presentation/import/playlist_json_import_flow.dart';
 import '../data/import_providers.dart';
 
 /// Section "Import" de Tab 1 (Étape 6) : liens Spotify et manifestes JSON
@@ -61,7 +53,8 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
     setState(() => _busy = true);
     try {
       final PlaylistManifest manifest = await ref.read(discoveryRepositoryProvider).importFromSpotifyLink(url);
-      await _handleManifest(manifest);
+      if (!mounted) return;
+      await PlaylistJsonImportFlow.importManifest(context, ref, manifest);
     } on DioException catch (error) {
       if (error.response?.statusCode == 403) {
         _showError(
@@ -78,63 +71,15 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
     }
   }
 
+  /// Parcours partagé avec Mon espace (voir PlaylistJsonImportFlow) : matching
+  /// automatique puis manuel, titres introuvables grisés, playlist ajoutée à
+  /// "Tes playlists".
   Future<void> _importFromJsonFile() async {
-    final PlatformFile? picked = await FilePicker.pickFile(type: FileType.custom, allowedExtensions: ['json']);
-    final String? path = picked?.path;
-    if (path == null) return;
-
     setState(() => _busy = true);
     try {
-      final String content = await File(path).readAsString();
-      final PlaylistManifest manifest = ref.read(discoveryRepositoryProvider).parseManifestJson(content);
-      await _handleManifest(manifest);
-    } catch (error) {
-      _showError('Fichier JSON invalide : $error');
+      await PlaylistJsonImportFlow.pickAndImport(context, ref);
     } finally {
       if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _handleManifest(PlaylistManifest manifest) async {
-    final playlistRepository = ref.read(playlistRepositoryProvider);
-    final manifestService = ref.read(playlistManifestServiceProvider);
-    final existing = await playlistRepository.findBySourceManifestId(manifest.id);
-
-    if (existing == null) {
-      final ForkResult result = await manifestService.forkFromManifest(manifest);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('"${result.playlist.title}" importée')));
-      await _resolveMissingTracks(result);
-      if (mounted) context.push('/space/playlist/${result.playlist.id}/edit');
-      return;
-    }
-
-    if (existing.version == manifest.version) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Déjà à jour.')));
-      return;
-    }
-
-    final diff = await manifestService.computeDiff(existing.id, manifest);
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (context) => DiffModal(
-        diff: diff,
-        onAccept: () async {
-          final ForkResult result = await manifestService.acceptUpdate(existing.id, manifest);
-          await _resolveMissingTracks(result);
-        },
-      ),
-    );
-  }
-
-  Future<void> _resolveMissingTracks(ForkResult result) async {
-    for (final ManifestTrackRef missing in result.missingTracks) {
-      if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (context) => MissingTrackDialog(missingTrack: missing, playlistId: result.playlist.id),
-      );
     }
   }
 

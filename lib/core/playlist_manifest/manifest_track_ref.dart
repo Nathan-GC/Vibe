@@ -16,10 +16,11 @@ class ManifestTrackRef {
   Map<String, dynamic> toJson() => {'title': title, 'artist': artist, 'album': album};
 
   factory ManifestTrackRef.fromJson(Map<String, dynamic> json) {
+    final String? album = (json['album'] as String?)?.trim();
     return ManifestTrackRef(
-      title: json['title'] as String,
-      artist: json['artist'] as String,
-      album: json['album'] as String?,
+      title: (json['title'] as String?)?.trim() ?? '',
+      artist: (json['artist'] as String?)?.trim() ?? '',
+      album: (album == null || album.isEmpty) ? null : album,
     );
   }
 }

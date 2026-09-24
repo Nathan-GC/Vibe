@@ -431,9 +431,13 @@ class _PlayerPageState extends ConsumerState<_PlayerPage> with SingleTickerProvi
   @override
   void didUpdateWidget(covariant _PlayerPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Un morceau qui change repart sur une interface visible plutôt que de
-    // rester immersif sur les infos d'un morceau différent.
-    if (oldWidget.player.currentTrack?.id != widget.player.currentTrack?.id) {
+    // Retour d'usage (v1.0.x) : un changement de morceau ne quitte PLUS le
+    // mode Focus — l'ancien `_exitImmersive()` réaffichait toute l'interface
+    // (puis 6,5s d'attente) à chaque piste. En Focus, seuls Titre/Artiste se
+    // mettent à jour (_ImmersiveCaption / bloc titre New OLED lisent
+    // `widget.player`). Seule exception : plus aucun morceau (file terminée,
+    // arrêt) — rien à afficher en Focus, retour à l'interface normale.
+    if (oldWidget.player.currentTrack != null && widget.player.currentTrack == null) {
       _exitImmersive();
     }
   }

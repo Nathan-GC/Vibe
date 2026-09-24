@@ -1,26 +1,35 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:drift/drift.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
+import '../../../core/identity/track_match_key.dart';
 import '../../../core/playlist_manifest/manifest_track_ref.dart';
 import '../../../core/playlist_manifest/playlist_manifest.dart';
 import '../../../core/storage/database/app_database.dart';
 import '../../../core/theme/vibe_engine/vibe_engine.dart';
 import '../../diff/domain/diff_result.dart';
-import '../domain/fork_result.dart';
+import '../domain/import_match_plan.dart';
+import 'import_track_matcher.dart';
 
-/// Export/fork/diff de playlists via le manifeste JSON commun (Étape 6).
+/// Export / import / mise à jour de playlists via le manifeste JSON commun.
+///
+/// Import en deux temps, pour laisser l'utilisateur trancher entre les deux :
+///  1. [planImport] : matching automatique contre la bibliothèque locale
+///     (voir ImportTrackMatcher) — ce qui n'est pas sûr part au matching
+///     manuel (ImportMatchingScreen) ;
+///  2. [importAsNewPlaylist] / [applyUpdate] avec la résolution finale, un
+///     `trackId` (ou `null`) par titre du manifeste : les titres sans morceau
+///     local deviennent des titres grisés ([PlaylistMissingTracks]) à leur
+///     position d'origine, jamais lus, dégrisés automatiquement plus tard.
 class PlaylistManifestService {
   PlaylistManifestService(this._db);
 
   final AppDatabase _db;
 
-  Future<PlaylistManifest> buildManifest(String playlistId, {String? creatorHandle}) async {
+  /// Manifeste d'une playlist locale, titres grisés compris (à leur place) :
+  /// réexporter une playlist importée ne perd pas les titres introuvables.
+  Future<PlaylistManifest> buildManifest(String playlistId, {String? author}) async {
     final Playlist playlist = await (_db.select(_db.playlists)..where((p) => p.id.equals(playlistId))).getSingle();
-    final List<ManifestTrackRef> tracks = (await _orderedTracks(playlistId)).map(_toManifestRef).toList();
 
     return PlaylistManifest(
       id: playlist.id,
@@ -29,30 +38,34 @@ class PlaylistManifestService {
       version: playlist.version,
       tags: playlist.tags,
       vibeStyle: playlist.vibeStyle.name,
-      creatorHandle: creatorHandle,
+      creatorHandle: author,
       originalCreator: playlist.originalCreator,
-      tracks: tracks,
+      tracks: await _orderedRefs(playlistId),
     );
   }
 
-  /// Écrit le manifeste dans le dossier documents de l'app (`exports/`) et
-  /// retourne le fichier créé.
-  Future<File> exportManifestToFile(String playlistId, {String? creatorHandle}) async {
-    final PlaylistManifest manifest = await buildManifest(playlistId, creatorHandle: creatorHandle);
-    final Directory documentsDir = await getApplicationDocumentsDirectory();
-    final String safeName = manifest.title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
-    final File file = File(p.join(documentsDir.path, 'exports', '$safeName.json'));
-    await file.parent.create(recursive: true);
-    await file.writeAsString(const JsonEncoder.withIndent('  ').convert(manifest.toJson()));
-    return file;
+  /// JSON indenté prêt à être enregistré, avec l'auteur saisi à l'export.
+  Future<String> exportManifestJson(String playlistId, {required String author}) async {
+    final PlaylistManifest manifest = await buildManifest(playlistId, author: author);
+    return const JsonEncoder.withIndent('  ').convert(manifest.toJson());
   }
 
-  /// Crée une nouvelle playlist locale éditable à partir d'un manifeste
-  /// importé, taguée "Inspired by @OriginalCreator" (`playlists.original_creator`).
-  Future<ForkResult> forkFromManifest(PlaylistManifest manifest) async {
+  /// Nom de fichier proposé pour l'export ("Ma playlist.json").
+  static String exportFileNameFor(String playlistTitle) {
+    final String safe = playlistTitle.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
+    return '${safe.isEmpty ? 'playlist' : safe}.json';
+  }
+
+  Future<ImportMatchPlan> planImport(List<ManifestTrackRef> refs) async {
+    final List<Track> library = await _db.select(_db.tracks).get();
+    return ImportTrackMatcher(library).plan(refs);
+  }
+
+  /// Crée la playlist importée (visible dans "Tes playlists", Découverte et
+  /// Mon espace), attribuée à l'auteur du manifeste ("Inspiré par @X").
+  Future<Playlist> importAsNewPlaylist(PlaylistManifest manifest, List<String?> resolution) async {
     final String newId = '${manifest.id}-fork-${DateTime.now().millisecondsSinceEpoch}';
     final String? attribution = manifest.creatorHandle ?? manifest.originalCreator;
-    final (resolvedIds, missing) = await _resolveAgainstLocalLibrary(manifest.tracks);
 
     await _db.transaction(() async {
       await _db.into(_db.playlists).insert(
@@ -67,89 +80,113 @@ class PlaylistManifestService {
               vibeStyle: Value(_parseVibe(manifest.vibeStyle)),
             ),
           );
-      await _insertPlaylistTracks(newId, resolvedIds);
+      await _writeEntries(newId, manifest.tracks, resolution);
     });
 
-    final Playlist created = await (_db.select(_db.playlists)..where((p) => p.id.equals(newId))).getSingle();
-    return ForkResult(playlist: created, missingTracks: missing);
+    return (_db.select(_db.playlists)..where((p) => p.id.equals(newId))).getSingle();
+  }
+
+  /// "Accepter la mise à jour" : remplace le contenu de la playlist (morceaux
+  /// ET titres grisés) par celui du manifeste entrant, met à jour `version`.
+  Future<Playlist> applyUpdate(String playlistId, PlaylistManifest incoming, List<String?> resolution) async {
+    await _db.transaction(() async {
+      await (_db.delete(_db.playlistTracks)..where((t) => t.playlistId.equals(playlistId))).go();
+      await (_db.delete(_db.playlistMissingTracks)..where((m) => m.playlistId.equals(playlistId))).go();
+      await _writeEntries(playlistId, incoming.tracks, resolution);
+      await (_db.update(_db.playlists)..where((p) => p.id.equals(playlistId)))
+          .write(PlaylistsCompanion(version: Value(incoming.version)));
+    });
+
+    return (_db.select(_db.playlists)..where((p) => p.id.equals(playlistId))).getSingle();
   }
 
   Future<DiffResult> computeDiff(String playlistId, PlaylistManifest incoming) async {
     final Playlist local = await (_db.select(_db.playlists)..where((p) => p.id.equals(playlistId))).getSingle();
-    final List<Track> localTracks = await _orderedTracks(playlistId);
-
-    final Map<String, ManifestTrackRef> localByKey = {for (final t in localTracks) t.id: _toManifestRef(t)};
-    final Map<String, ManifestTrackRef> incomingByKey = {for (final t in incoming.tracks) t.sanitizedKey: t};
+    // Même clé tolérante que le matching d'import (titre + artiste
+    // normalisés, sans album) : un titre associé à "Move feat. X" localement
+    // n'apparaît pas comme retiré/ajouté face au "Move" du manifeste — la clé
+    // exacte (album compris) gonflait l'aperçu de faux changements.
+    String keyOf(ManifestTrackRef ref) => buildTrackMatchKey(title: ref.title, artist: ref.artist);
+    final Map<String, ManifestTrackRef> localByKey = {
+      for (final ManifestTrackRef ref in await _orderedRefs(playlistId)) keyOf(ref): ref,
+    };
+    final Map<String, ManifestTrackRef> incomingByKey = {for (final t in incoming.tracks) keyOf(t): t};
 
     return DiffResult(
       localVersion: local.version,
       incomingVersion: incoming.version,
       added: [
         for (final e in incomingByKey.entries)
-          if (!localByKey.containsKey(e.key)) e.value
+          if (!localByKey.containsKey(e.key)) e.value,
       ],
       removed: [
         for (final e in localByKey.entries)
-          if (!incomingByKey.containsKey(e.key)) e.value
+          if (!incomingByKey.containsKey(e.key)) e.value,
       ],
     );
   }
 
-  /// "Accept Update" : aligne `playlist_tracks` sur le manifeste entrant et
-  /// met à jour `version` localement.
-  Future<ForkResult> acceptUpdate(String playlistId, PlaylistManifest incoming) async {
-    final (resolvedIds, missing) = await _resolveAgainstLocalLibrary(incoming.tracks);
+  /// Écrit un titre par position `i` du manifeste : morceau local si
+  /// `resolution[i]` est renseigné, titre grisé sinon. Un morceau déjà placé
+  /// plus haut (doublon) n'est pas réinséré — clé primaire (playlist,
+  /// morceau).
+  Future<void> _writeEntries(String playlistId, List<ManifestTrackRef> refs, List<String?> resolution) async {
+    if (resolution.length != refs.length) {
+      throw ArgumentError('Résolution incomplète : ${resolution.length} choix pour ${refs.length} titres');
+    }
+    final Set<String> placed = {};
+    final List<PlaylistTracksCompanion> tracks = [];
+    final List<PlaylistMissingTracksCompanion> missing = [];
 
-    await _db.transaction(() async {
-      await (_db.delete(_db.playlistTracks)..where((t) => t.playlistId.equals(playlistId))).go();
-      await _insertPlaylistTracks(playlistId, resolvedIds);
-      await (_db.update(_db.playlists)..where((p) => p.id.equals(playlistId)))
-          .write(PlaylistsCompanion(version: Value(incoming.version)));
+    for (int i = 0; i < refs.length; i++) {
+      final String? trackId = resolution[i];
+      final ManifestTrackRef ref = refs[i];
+      if (trackId != null) {
+        if (!placed.add(trackId)) continue;
+        tracks.add(PlaylistTracksCompanion.insert(
+          playlistId: playlistId,
+          trackId: trackId,
+          position: i,
+          isPendingPlacement: const Value(false),
+        ));
+      } else {
+        missing.add(PlaylistMissingTracksCompanion.insert(
+          playlistId: playlistId,
+          position: i,
+          title: ref.title,
+          artist: ref.artist,
+          album: Value(ref.album ?? ''),
+          sanitizedKey: ref.sanitizedKey,
+          matchKey: buildTrackMatchKey(title: ref.title, artist: ref.artist),
+        ));
+      }
+    }
+
+    await _db.batch((batch) {
+      if (tracks.isNotEmpty) batch.insertAll(_db.playlistTracks, tracks);
+      if (missing.isNotEmpty) batch.insertAll(_db.playlistMissingTracks, missing);
     });
-
-    final Playlist updated = await (_db.select(_db.playlists)..where((p) => p.id.equals(playlistId))).getSingle();
-    return ForkResult(playlist: updated, missingTracks: missing);
   }
 
-  Future<List<Track>> _orderedTracks(String playlistId) async {
+  /// Titres de la playlist dans l'ordre d'affichage, morceaux et titres
+  /// grisés fusionnés.
+  Future<List<ManifestTrackRef>> _orderedRefs(String playlistId) async {
     final query = _db.select(_db.playlistTracks).join([
       innerJoin(_db.tracks, _db.tracks.id.equalsExp(_db.playlistTracks.trackId)),
     ])
-      ..where(_db.playlistTracks.playlistId.equals(playlistId))
-      ..orderBy([OrderingTerm.asc(_db.playlistTracks.position)]);
-
-    final rows = await query.get();
-    return rows.map((row) => row.readTable(_db.tracks)).toList();
-  }
-
-  Future<(List<String>, List<ManifestTrackRef>)> _resolveAgainstLocalLibrary(List<ManifestTrackRef> refs) async {
-    final Set<String> localIds = (await _db.select(_db.tracks).get()).map((t) => t.id).toSet();
-    final List<String> resolved = [];
-    final List<ManifestTrackRef> missing = [];
-
-    for (final ref in refs) {
-      if (localIds.contains(ref.sanitizedKey)) {
-        resolved.add(ref.sanitizedKey);
-      } else {
-        missing.add(ref);
-      }
+      ..where(_db.playlistTracks.playlistId.equals(playlistId));
+    final List<(int, ManifestTrackRef)> positioned = [
+      for (final row in await query.get())
+        (row.readTable(_db.playlistTracks).position, _toManifestRef(row.readTable(_db.tracks))),
+    ];
+    final List<PlaylistMissingTrack> missing =
+        await (_db.select(_db.playlistMissingTracks)..where((m) => m.playlistId.equals(playlistId))).get();
+    for (final PlaylistMissingTrack m in missing) {
+      positioned.add(
+          (m.position, ManifestTrackRef(title: m.title, artist: m.artist, album: m.album.isEmpty ? null : m.album)));
     }
-    return (resolved, missing);
-  }
-
-  Future<void> _insertPlaylistTracks(String playlistId, List<String> orderedTrackIds) async {
-    if (orderedTrackIds.isEmpty) return;
-    await _db.batch((batch) {
-      batch.insertAll(_db.playlistTracks, [
-        for (int i = 0; i < orderedTrackIds.length; i++)
-          PlaylistTracksCompanion.insert(
-            playlistId: playlistId,
-            trackId: orderedTrackIds[i],
-            position: i,
-            isPendingPlacement: const Value(false),
-          ),
-      ]);
-    });
+    positioned.sort((a, b) => a.$1.compareTo(b.$1));
+    return positioned.map((pair) => pair.$2).toList();
   }
 
   ManifestTrackRef _toManifestRef(Track track) => ManifestTrackRef(

@@ -1,7 +1,7 @@
 name: playlist_app
 description: Lecteur de musique local-first, entièrement personnalisable.
 publish_to: "none"
-version: 1.0.0+2
+version: 1.1.0+3
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -76,6 +76,13 @@ dependencies:
   video_player: ^2.9.2
 
   open_filex: ^4.7.0
+
+  # Mode Focus : écran maintenu allumé (FLAG_KEEP_SCREEN_ON), sauf en mode
+  # économie d'énergie — plugin local versionné dans le dépôt (le dossier
+  # android/ est gitignoré), sans dépendance Maven supplémentaire. Voir
+  # core/system/focus_keep_screen_on.dart.
+  vibe_power:
+    path: packages/vibe_power
 
 dev_dependencies:
   flutter_test:

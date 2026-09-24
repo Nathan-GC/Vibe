@@ -16,6 +16,9 @@ build/
 
 # Platform (générés par `flutter create .`)
 android/
+# Exception : code natif des plugins locaux (packages/*/android), qui doit
+# être versionné — seul le dossier android/ de l'app reste exclu.
+!packages/*/android/
 ios/
 web/
 macos/

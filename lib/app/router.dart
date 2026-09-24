@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../core/audio_engine/player_immersive_mode_provider.dart';
 import '../core/navigation/shell_route_visibility.dart';
+import '../core/system/focus_keep_screen_on.dart';
 import '../features/discovery/presentation/artist_profile_screen.dart';
 import '../features/discovery/presentation/discovery_screen.dart';
 import '../features/discovery/presentation/import_screen.dart';
@@ -117,6 +118,10 @@ class _TabShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final bool isImmersive = ref.watch(playerImmersiveModeProvider);
+    // Maintient l'écran allumé pendant le mode Focus (hors économie
+    // d'énergie) — lu ici pour que le contrôleur vive aussi longtemps que la
+    // coque, voir FocusKeepScreenOnController.
+    ref.watch(focusKeepScreenOnProvider);
     final bool onPlayerTab = navigationShell.currentIndex == _playerTabIndex;
     // Retest QA (61b5cf1) : barre d'état masquée DANS les Paramètres. Les
     // sous-pages (/settings, fiche artiste...) sont poussées sur le Navigator
