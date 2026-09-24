@@ -113,7 +113,8 @@ void main() {
   });
 
   group('watchArtistTracks (QA Section 3.A — comparaison insensible à la casse)', () {
-    test('finds tracks regardless of the stored casing, matching the canonical name from fetchAllArtistNames', () async {
+    test('finds tracks regardless of the stored casing, matching the canonical name from fetchAllArtistNames',
+        () async {
       await addTrack(id: 't1', artists: ['ABBA']);
       await addTrack(id: 't2', artists: ['Abba']);
       final String canonical = (await artistRepository.fetchAllArtistNames()).single;

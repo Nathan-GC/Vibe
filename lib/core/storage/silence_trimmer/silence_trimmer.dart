@@ -41,8 +41,7 @@ class SilenceTrimmerService {
 
   Future<List<_SilenceWindow>> _runSilenceDetect(String filePath) async {
     final double thresholdSec = minSilenceDuration.inMilliseconds / 1000;
-    final String command =
-        '-i "$filePath" -af silencedetect=noise=${silenceThresholdDb}dB:d=$thresholdSec -f null -';
+    final String command = '-i "$filePath" -af silencedetect=noise=${silenceThresholdDb}dB:d=$thresholdSec -f null -';
 
     final session = await FFmpegKit.execute(command);
     final returnCode = await session.getReturnCode();

@@ -22,70 +22,41 @@ import '../features/settings/presentation/settings_screen.dart';
 final GoRouter appRouter = GoRouter(
   initialLocation: '/player',
   routes: [
-    GoRoute(
-        path: '/onboarding',
-        builder: (context, state) => const OnboardingScreen()),
-    GoRoute(
-        path: '/settings', builder: (context, state) => const SettingsScreen()),
+    GoRoute(path: '/onboarding', builder: (context, state) => const OnboardingScreen()),
+    GoRoute(path: '/settings', builder: (context, state) => const SettingsScreen()),
     StatefulShellRoute.indexedStack(
-      builder: (context, state, navigationShell) =>
-          _TabShell(navigationShell: navigationShell),
+      builder: (context, state, navigationShell) => _TabShell(navigationShell: navigationShell),
       branches: [
         StatefulShellBranch(
-          routes: [
-            GoRoute(
-                path: '/discovery',
-                builder: (context, state) => const DiscoveryScreen())
-          ],
+          routes: [GoRoute(path: '/discovery', builder: (context, state) => const DiscoveryScreen())],
         ),
         StatefulShellBranch(
-          routes: [
-            GoRoute(
-                path: '/player',
-                builder: (context, state) => const MasterPlayerScreen())
-          ],
+          routes: [GoRoute(path: '/player', builder: (context, state) => const MasterPlayerScreen())],
         ),
         StatefulShellBranch(
-          routes: [
-            GoRoute(
-                path: '/space',
-                builder: (context, state) => const PersonalSpaceScreen())
-          ],
+          routes: [GoRoute(path: '/space', builder: (context, state) => const PersonalSpaceScreen())],
         ),
       ],
     ),
     GoRoute(
       path: '/discovery/artist/:artistName',
-      builder: (context, state) =>
-          ArtistProfileScreen(artistName: state.pathParameters['artistName']!),
+      builder: (context, state) => ArtistProfileScreen(artistName: state.pathParameters['artistName']!),
     ),
-    GoRoute(
-        path: '/discovery/import',
-        builder: (context, state) => const ImportScreen()),
+    GoRoute(path: '/discovery/import', builder: (context, state) => const ImportScreen()),
     GoRoute(
       path: '/space/playlist/:playlistId/edit',
-      builder: (context, state) =>
-          PlaylistEditorScreen(playlistId: state.pathParameters['playlistId']!),
+      builder: (context, state) => PlaylistEditorScreen(playlistId: state.pathParameters['playlistId']!),
     ),
     GoRoute(
       path: '/space/playlist/:playlistId/vibe',
-      builder: (context, state) =>
-          VibeCustomizerScreen(playlistId: state.pathParameters['playlistId']!),
+      builder: (context, state) => VibeCustomizerScreen(playlistId: state.pathParameters['playlistId']!),
     ),
-    GoRoute(
-        path: '/space/cleanup',
-        builder: (context, state) => const OrphanCleanupScreen()),
-    GoRoute(
-        path: '/space/library',
-        builder: (context, state) => const LibraryScreen()),
-    GoRoute(
-        path: '/space/library/duplicates',
-        builder: (context, state) => const DuplicateTracksScreen()),
+    GoRoute(path: '/space/cleanup', builder: (context, state) => const OrphanCleanupScreen()),
+    GoRoute(path: '/space/library', builder: (context, state) => const LibraryScreen()),
+    GoRoute(path: '/space/library/duplicates', builder: (context, state) => const DuplicateTracksScreen()),
     // Fusion d'artistes : déplacée des Réglages vers la zone d'importation
     // de la Bibliothèque (voir LibraryScreen).
-    GoRoute(
-        path: '/space/library/artist-fusion',
-        builder: (context, state) => const ArtistFusionScreen()),
+    GoRoute(path: '/space/library/artist-fusion', builder: (context, state) => const ArtistFusionScreen()),
   ],
 );
 

@@ -84,7 +84,8 @@ class EnrichmentStatusConverter extends TypeConverter<EnrichmentStatus, String> 
 
   @override
   EnrichmentStatus fromSql(String fromDb) {
-    return EnrichmentStatus.values.firstWhere((status) => status.name == fromDb, orElse: () => EnrichmentStatus.pending);
+    return EnrichmentStatus.values
+        .firstWhere((status) => status.name == fromDb, orElse: () => EnrichmentStatus.pending);
   }
 
   @override
@@ -168,8 +169,7 @@ class Playlists extends Table {
   TextColumn get sourceManifestId => text().nullable()();
   IntColumn get version => integer().withDefault(const Constant(1))();
   TextColumn get tags => text().map(const StringListConverter()).withDefault(const Constant('[]'))();
-  TextColumn get vibeStyle =>
-      text().map(const VibePresetConverter()).withDefault(const Constant('minimal'))();
+  TextColumn get vibeStyle => text().map(const VibePresetConverter()).withDefault(const Constant('minimal'))();
   // Pour `vibeStyle == VibePreset.custom` : couleurs choisies dans le Vibe
   // Creator (format hex ARGB, ex. "FFFF00E5"), voir PlaylistVibeResolver.
   TextColumn get bgColors => text().map(const StringListConverter()).withDefault(const Constant('[]'))();
@@ -189,8 +189,7 @@ class Playlists extends Table {
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   // Effet de fond du Vibe Creator (Section 4.2) pour `vibeStyle == custom`
   // uniquement — voir [VibeCustomEffect]. Sans effet pour les autres presets.
-  TextColumn get customEffect =>
-      text().map(const VibeCustomEffectConverter()).withDefault(const Constant('fluid'))();
+  TextColumn get customEffect => text().map(const VibeCustomEffectConverter()).withDefault(const Constant('fluid'))();
   // Vidéo de fond personnalisée (Section 4.3, `vibeStyle == custom`) —
   // chemin local sous Music/AppFolder/vibe_backgrounds/, vide si non définie.
   // Remplace entièrement le rendu shader/dégradé/image du Master Player

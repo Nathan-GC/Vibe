@@ -39,7 +39,8 @@ void main() {
 
   Future<void> insertTrack({required String id, required String title, required List<String> artists}) async {
     await db.into(db.tracks).insert(
-          TracksCompanion.insert(id: id, title: title, album: '', artists: artists, durationSeconds: 180, filePath: '/music/$id.mp3'),
+          TracksCompanion.insert(
+              id: id, title: title, album: '', artists: artists, durationSeconds: 180, filePath: '/music/$id.mp3'),
         );
   }
 
@@ -47,7 +48,8 @@ void main() {
     await insertTrack(id: 't1', title: 'Bootleg Mix', artists: ['Some DJ']);
     final enricher = YoutubeAutoEnricher(
       youtubeEnricherService: _FakeYoutubeEnricherService(const [
-        OnlineTrackResult(artist: 'Some Channel', title: 'Bootleg Mix', coverArtUrl: 'https://i.ytimg.com/vi/x/maxresdefault.jpg'),
+        OnlineTrackResult(
+            artist: 'Some Channel', title: 'Bootleg Mix', coverArtUrl: 'https://i.ytimg.com/vi/x/maxresdefault.jpg'),
       ]),
       trackRepository: repository,
     );
@@ -66,10 +68,12 @@ void main() {
 
   test('does not overwrite an existing cover art', () async {
     await insertTrack(id: 't1', title: 'Bootleg Mix', artists: ['Some DJ']);
-    await (db.update(db.tracks)..where((t) => t.id.equals('t1'))).write(const TracksCompanion(coverArtPath: Value('local/existing.jpg')));
+    await (db.update(db.tracks)..where((t) => t.id.equals('t1')))
+        .write(const TracksCompanion(coverArtPath: Value('local/existing.jpg')));
     final enricher = YoutubeAutoEnricher(
       youtubeEnricherService: _FakeYoutubeEnricherService(const [
-        OnlineTrackResult(artist: 'Some Channel', title: 'Bootleg Mix', coverArtUrl: 'https://i.ytimg.com/vi/x/maxresdefault.jpg'),
+        OnlineTrackResult(
+            artist: 'Some Channel', title: 'Bootleg Mix', coverArtUrl: 'https://i.ytimg.com/vi/x/maxresdefault.jpg'),
       ]),
       trackRepository: repository,
     );
@@ -99,7 +103,8 @@ void main() {
 
   test('a network failure does not consume an attempt', () async {
     await insertTrack(id: 't1', title: 'Bootleg Mix', artists: ['Some DJ']);
-    final enricher = YoutubeAutoEnricher(youtubeEnricherService: _ThrowingYoutubeEnricherService(), trackRepository: repository);
+    final enricher =
+        YoutubeAutoEnricher(youtubeEnricherService: _ThrowingYoutubeEnricherService(), trackRepository: repository);
 
     final bool ok = await enricher.enrichTrack(trackId: 't1', title: 'Bootleg Mix', artists: ['Some DJ']);
 

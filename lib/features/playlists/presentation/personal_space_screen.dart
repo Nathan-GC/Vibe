@@ -39,9 +39,8 @@ class PersonalSpaceScreen extends ConsumerWidget {
     );
     if (title == null || title.isEmpty) return;
 
-    final Playlist created = await ref
-        .read(playlistRepositoryProvider)
-        .createEmpty(title: title, vibeStyle: VibePreset.minimal);
+    final Playlist created =
+        await ref.read(playlistRepositoryProvider).createEmpty(title: title, vibeStyle: VibePreset.minimal);
     if (context.mounted) context.push('/space/playlist/${created.id}/edit');
   }
 

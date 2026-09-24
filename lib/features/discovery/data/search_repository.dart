@@ -46,7 +46,9 @@ class SearchRepository {
       ..where(_db.trackArtists.artistName.like(pattern));
     final List<Track> byArtist = (await artistJoin.get()).map((row) => row.readTable(_db.tracks)).toList();
 
-    final Map<String, Track> merged = {for (final t in [...byTitle, ...byArtist]) t.id: t};
+    final Map<String, Track> merged = {
+      for (final t in [...byTitle, ...byArtist]) t.id: t
+    };
     return merged.values.toList();
   }
 

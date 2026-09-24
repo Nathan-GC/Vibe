@@ -25,7 +25,9 @@ final artistMetadataProvider = FutureProvider.family<ArtistMetadata?, String>((r
 typedef ArtistTracksQuery = ({String artistName, ArtistFilter filter, ArtistSort sort});
 
 final artistTracksProvider = StreamProvider.family<List<Track>, ArtistTracksQuery>((ref, query) {
-  return ref.watch(artistRepositoryProvider).watchArtistTracks(query.artistName, filter: query.filter, sort: query.sort);
+  return ref
+      .watch(artistRepositoryProvider)
+      .watchArtistTracks(query.artistName, filter: query.filter, sort: query.sort);
 });
 
 /// "Morceaux populaires" (Profil Artiste) — `autoDispose` : inutile de garder

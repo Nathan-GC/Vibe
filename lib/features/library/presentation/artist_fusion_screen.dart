@@ -115,7 +115,8 @@ class _ArtistFusionScreenState extends ConsumerState<ArtistFusionScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text(title),
-        content: TextField(controller: controller, autofocus: true, decoration: const InputDecoration(labelText: 'Nom')),
+        content:
+            TextField(controller: controller, autofocus: true, decoration: const InputDecoration(labelText: 'Nom')),
         actions: [
           TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Annuler')),
           FilledButton(onPressed: () => Navigator.of(context).pop(controller.text), child: const Text('Valider')),

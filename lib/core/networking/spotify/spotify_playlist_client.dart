@@ -78,7 +78,8 @@ class SpotifyPlaylistClient {
     String? nextUrl = 'https://api.spotify.com/v1/playlists/$playlistId/tracks?limit=50';
 
     while (nextUrl != null) {
-      final Response<Map<String, dynamic>> response = await _dio.get<Map<String, dynamic>>(nextUrl, options: authOptions);
+      final Response<Map<String, dynamic>> response =
+          await _dio.get<Map<String, dynamic>>(nextUrl, options: authOptions);
       final List<dynamic> items = response.data?['items'] as List<dynamic>? ?? const [];
 
       for (final dynamic item in items) {

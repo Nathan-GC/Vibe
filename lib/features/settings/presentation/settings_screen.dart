@@ -93,7 +93,7 @@ class SettingsScreen extends ConsumerWidget {
           const ListTile(
             leading: Icon(Icons.info_outline),
             title: Text('À propos'),
-            subtitle: Text('Playlist App — lecteur local-first'),
+            subtitle: Text('Vibe — lecteur local-first'),
           ),
         ],
       ),

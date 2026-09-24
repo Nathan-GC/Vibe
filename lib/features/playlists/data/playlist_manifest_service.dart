@@ -84,8 +84,14 @@ class PlaylistManifestService {
     return DiffResult(
       localVersion: local.version,
       incomingVersion: incoming.version,
-      added: [for (final e in incomingByKey.entries) if (!localByKey.containsKey(e.key)) e.value],
-      removed: [for (final e in localByKey.entries) if (!incomingByKey.containsKey(e.key)) e.value],
+      added: [
+        for (final e in incomingByKey.entries)
+          if (!localByKey.containsKey(e.key)) e.value
+      ],
+      removed: [
+        for (final e in localByKey.entries)
+          if (!incomingByKey.containsKey(e.key)) e.value
+      ],
     );
   }
 
@@ -152,5 +158,6 @@ class PlaylistManifestService {
         album: track.album.isEmpty ? null : track.album,
       );
 
-  VibePreset _parseVibe(String raw) => VibePreset.values.firstWhere((v) => v.name == raw, orElse: () => VibePreset.minimal);
+  VibePreset _parseVibe(String raw) =>
+      VibePreset.values.firstWhere((v) => v.name == raw, orElse: () => VibePreset.minimal);
 }

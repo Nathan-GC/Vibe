@@ -108,13 +108,16 @@ ThemeData _applyDesignSystemShapes(ThemeData base) {
       clipBehavior: Clip.antiAlias,
     ),
     filledButtonTheme: FilledButtonThemeData(
-      style: FilledButton.styleFrom(shape: AppShapes.pill, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14)),
+      style: FilledButton.styleFrom(
+          shape: AppShapes.pill, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14)),
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
-      style: ElevatedButton.styleFrom(shape: AppShapes.pill, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14)),
+      style: ElevatedButton.styleFrom(
+          shape: AppShapes.pill, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14)),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
-      style: OutlinedButton.styleFrom(shape: AppShapes.pill, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14)),
+      style: OutlinedButton.styleFrom(
+          shape: AppShapes.pill, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14)),
     ),
     chipTheme: base.chipTheme.copyWith(shape: AppShapes.pill),
     bottomSheetTheme: base.bottomSheetTheme.copyWith(shape: AppShapes.modalTop),

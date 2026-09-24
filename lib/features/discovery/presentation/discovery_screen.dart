@@ -227,7 +227,8 @@ class _AutocompleteTile extends StatelessWidget {
             )
           : Icon(_iconFor(suggestion.kind), color: accentColor),
       title: Text(suggestion.label, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: suggestion.subtitle == null ? null : Text(suggestion.subtitle!, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle:
+          suggestion.subtitle == null ? null : Text(suggestion.subtitle!, maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: suggestion.kind == SuggestionKind.artist ? const Icon(Icons.chevron_right, size: 18) : null,
       onTap: () {
         if (suggestion.kind == SuggestionKind.artist) {
@@ -305,7 +306,8 @@ class _SuggestionsPanel extends ConsumerWidget {
                     children: [
                       const Padding(
                         padding: EdgeInsets.symmetric(horizontal: 16),
-                        child: Text("Suggestions d'artistes", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        child:
+                            Text("Suggestions d'artistes", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                       ),
                       const SizedBox(height: AppSpacing.s),
                       SizedBox(
@@ -392,7 +394,9 @@ class _TopArtistPlaylistCard extends ConsumerWidget {
                         child: const Icon(Icons.person_outline, size: 40),
                       )
                     : Image(
-                        image: coverPath.startsWith('http') ? NetworkImage(coverPath) : FileImage(File(coverPath)) as ImageProvider,
+                        image: coverPath.startsWith('http')
+                            ? NetworkImage(coverPath)
+                            : FileImage(File(coverPath)) as ImageProvider,
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) => Container(
                           color: Theme.of(context).colorScheme.surfaceContainerHighest,

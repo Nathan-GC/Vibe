@@ -75,7 +75,8 @@ class _MissingTrackDialogState extends ConsumerState<MissingTrackDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                [widget.missingTrack.artist, if (widget.missingTrack.album != null) widget.missingTrack.album].join(' · '),
+                [widget.missingTrack.artist, if (widget.missingTrack.album != null) widget.missingTrack.album]
+                    .join(' · '),
               ),
               const SizedBox(height: 16),
               OutlinedButton.icon(

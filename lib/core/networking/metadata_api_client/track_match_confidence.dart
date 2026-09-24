@@ -58,8 +58,9 @@ class TrackMatchConfidence {
     final String normCandidateTitle = _normalize(candidate.title);
     if (normLocalTitle.isEmpty || normCandidateTitle.isEmpty) return false;
 
-    final bool titleMatches =
-        normLocalTitle == normCandidateTitle || normLocalTitle.contains(normCandidateTitle) || normCandidateTitle.contains(normLocalTitle);
+    final bool titleMatches = normLocalTitle == normCandidateTitle ||
+        normLocalTitle.contains(normCandidateTitle) ||
+        normCandidateTitle.contains(normLocalTitle);
     if (!titleMatches) return false;
 
     final String? knownArtist = _knownArtist(localArtists);

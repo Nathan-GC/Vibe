@@ -56,7 +56,7 @@ class _PlaylistAppState extends ConsumerState<PlaylistApp> {
     final Color userAccent = ref.watch(userAccentColorProvider);
 
     return MaterialApp.router(
-      title: 'Playlist App',
+      title: 'Vibe',
       debugShowCheckedModeBanner: false,
       themeMode: themeMode,
       theme: applyVibe(buildLightTheme(seedColor: userAccent), vibe),

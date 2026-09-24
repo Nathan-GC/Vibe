@@ -7,7 +7,8 @@ final Provider<DiscoveryRepository> discoveryRepositoryProvider = Provider<Disco
   return DefaultDiscoveryRepository();
 });
 
-final Provider<SpotifyCredentialsStorage> spotifyCredentialsStorageProvider = Provider<SpotifyCredentialsStorage>((ref) {
+final Provider<SpotifyCredentialsStorage> spotifyCredentialsStorageProvider =
+    Provider<SpotifyCredentialsStorage>((ref) {
   return SpotifyCredentialsStorage();
 });
 

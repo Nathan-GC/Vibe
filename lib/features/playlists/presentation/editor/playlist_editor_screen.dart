@@ -216,7 +216,8 @@ class _CoverHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(playlist.title, style: Theme.of(context).textTheme.titleMedium, maxLines: 2, overflow: TextOverflow.ellipsis),
+                Text(playlist.title,
+                    style: Theme.of(context).textTheme.titleMedium, maxLines: 2, overflow: TextOverflow.ellipsis),
                 const SizedBox(height: AppSpacing.s),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.image_outlined, size: 18),

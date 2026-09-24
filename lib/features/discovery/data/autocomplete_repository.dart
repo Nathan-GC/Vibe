@@ -82,7 +82,8 @@ class AutocompleteRepository {
       if (tracks.length >= _maxTracks) break;
       final String key = '${result.title.toLowerCase()}|${result.artist.toLowerCase()}';
       if (!seen.add(key)) continue;
-      tracks.add(AutocompleteSuggestion.onlineTrack(title: result.title, artist: result.artist, artworkUrl: result.coverArtUrl));
+      tracks.add(AutocompleteSuggestion.onlineTrack(
+          title: result.title, artist: result.artist, artworkUrl: result.coverArtUrl));
     }
 
     return tracks.take(_maxTracks).toList();
@@ -101,11 +102,14 @@ class AutocompleteRepository {
 
   Future<List<AutocompleteSuggestion>> _localTracks(String query) async {
     final String pattern = '%$query%';
-    final List<Track> tracks =
-        await (_db.select(_db.tracks)..where((t) => t.title.like(pattern))..limit(_maxTracks)).get();
+    final List<Track> tracks = await (_db.select(_db.tracks)
+          ..where((t) => t.title.like(pattern))
+          ..limit(_maxTracks))
+        .get();
 
     return [
-      for (final track in tracks) AutocompleteSuggestion.localTrack(title: track.title, artist: track.artists.join(', ')),
+      for (final track in tracks)
+        AutocompleteSuggestion.localTrack(title: track.title, artist: track.artists.join(', ')),
     ];
   }
 }

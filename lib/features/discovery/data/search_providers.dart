@@ -17,7 +17,8 @@ class SearchQuery extends Notifier<String> {
   void set(String value) => state = value;
 }
 
-final NotifierProvider<SearchQuery, String> searchQueryProvider = NotifierProvider<SearchQuery, String>(SearchQuery.new);
+final NotifierProvider<SearchQuery, String> searchQueryProvider =
+    NotifierProvider<SearchQuery, String>(SearchQuery.new);
 
 final FutureProvider<List<SearchResult>> searchResultsProvider = FutureProvider<List<SearchResult>>((ref) {
   final String query = ref.watch(searchQueryProvider);

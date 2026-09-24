@@ -68,5 +68,8 @@ final FutureProvider<List<Track>> queueTracksProvider = FutureProvider<List<Trac
   final List<Track> rows = await (db.select(db.tracks)..where((t) => t.id.isIn(ids))).get();
   final Map<String, Track> byId = {for (final track in rows) track.id: track};
 
-  return [for (final id in ids) if (byId[id] != null) byId[id]!];
+  return [
+    for (final id in ids)
+      if (byId[id] != null) byId[id]!
+  ];
 });

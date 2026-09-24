@@ -84,7 +84,8 @@ void main() {
     });
 
     test('flags for review when the only dash is inside brackets (no real separator)', () {
-      final r = sanitizer.sanitizeFilename('VladimirCauchemar&6IX9INEAulosReloaded(WSHHExclusive-OfficialMusicVideo).m4a');
+      final r =
+          sanitizer.sanitizeFilename('VladimirCauchemar&6IX9INEAulosReloaded(WSHHExclusive-OfficialMusicVideo).m4a');
       expect(r.artist, 'Unknown');
       expect(r.requiresUserReview, isTrue);
     });
@@ -136,7 +137,8 @@ void main() {
       expect(r.title, 'Strobe');
     });
 
-    test('flags for review instead of guessing when a redundant re-attribution tag remains after the hash is removed', () {
+    test('flags for review instead of guessing when a redundant re-attribution tag remains after the hash is removed',
+        () {
       // Cas réel : convention "Titre (tags)-NomChaîne-<hash>.mp3" — une fois
       // le hash seul retiré, "-Eurythmics" ne doit pas être pris pour un vrai
       // titre puisqu'il ne fait que répéter le début de l'artiste.

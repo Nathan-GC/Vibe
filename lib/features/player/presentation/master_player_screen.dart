@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -34,10 +35,8 @@ class MasterPlayerScreen extends ConsumerStatefulWidget {
   ConsumerState<MasterPlayerScreen> createState() => _MasterPlayerScreenState();
 }
 
-class _MasterPlayerScreenState extends ConsumerState<MasterPlayerScreen>
-    with SingleTickerProviderStateMixin {
-  late final TempoSyncController _tempoController =
-      TempoSyncController(vsync: this);
+class _MasterPlayerScreenState extends ConsumerState<MasterPlayerScreen> with SingleTickerProviderStateMixin {
+  late final TempoSyncController _tempoController = TempoSyncController(vsync: this);
 
   // Clé stable pour le PageView (Player + Queue) : sans elle, chaque bascule
   // du fond entre `VibeVideoBackground` et `FluidBackground` (types de widget
@@ -94,9 +93,8 @@ class _MasterPlayerScreenState extends ConsumerState<MasterPlayerScreen>
     _tempoController.updateBpm((player.currentTrack?.bpm ?? 120).toDouble());
 
     final String? playlistId = player.currentPlaylistId;
-    final AsyncValue<Playlist?> playlistAsync = playlistId == null
-        ? const AsyncValue.data(null)
-        : ref.watch(playlistByIdProvider(playlistId));
+    final AsyncValue<Playlist?> playlistAsync =
+        playlistId == null ? const AsyncValue.data(null) : ref.watch(playlistByIdProvider(playlistId));
     // Stabilité de la pochette : pendant un rechargement transitoire du
     // stream (valeur momentanément absente), on garde la dernière playlist
     // résolue pour le MÊME id plutôt que de retomber une frame sur le repli
@@ -133,58 +131,105 @@ class _MasterPlayerScreenState extends ConsumerState<MasterPlayerScreen>
     // utilise déjà pour AlbumArtReactive, réutilisé ici pour l'extraction de
     // palette (FluidBackground) — un morceau sans pochette dédiée profite
     // quand même des couleurs de la playlist plutôt que du dégradé statique.
-    final String? effectiveCoverArtPath =
-        (track?.coverArtPath.isNotEmpty ?? false)
-            ? track!.coverArtPath
-            : ((playlistCoverImagePath?.isNotEmpty ?? false)
-                ? playlistCoverImagePath
-                : null);
+    final String? effectiveCoverArtPath = (track?.coverArtPath.isNotEmpty ?? false)
+        ? track!.coverArtPath
+        : ((playlistCoverImagePath?.isNotEmpty ?? false) ? playlistCoverImagePath : null);
 
-    return Scaffold(
-      // Transitions fluides de Vibe (800ms, easeInOutCubic) : tout ce qui
-      // dépend de la Vibe reçoit la valeur interpolée, jamais `vibe` brute —
-      // voir AnimatedVibeTheme.
-      body: AnimatedVibeTheme(
-        vibe: vibe,
-        builder: (context, animatedVibe, child) {
-          // Section 4.1 : le fond (FluidBackground ou vidéo) englobe désormais
-          // tout le PageView (Player + Queue) plutôt que la seule page 1 — la
-          // Vibe reste donc visible et animée pendant le swipe vers la Queue
-          // au lieu de disparaître derrière un fond vide.
-          final Widget pageView = PageView(
-            key: _pageViewKey,
-            children: [
-              _PlayerPage(
-                tempoController: _tempoController,
-                vibe: animatedVibe,
-                player: player,
-                coverKey: _coverKey,
-                playlistCoverImagePath: playlistCoverImagePath,
-              ),
-              const QueueScreen(),
-            ],
-          );
+    // Icônes de la barre d'état (heure, batterie, réseau) : blanches sur une
+    // Vibe sombre/OLED, sombres sur une Vibe claire — sans ça, le thème clair
+    // de l'app les laissait noires sur le fond noir de Space/OLED (barre
+    // pourtant affichée, mais illisible). Le Player n'a pas d'AppBar pour le
+    // faire à sa place, contrairement aux autres écrans.
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: _statusBarStyleFor(vibe, Theme.of(context).scaffoldBackgroundColor),
+      child: Scaffold(
+        // Transitions fluides de Vibe (800ms, easeInOutCubic) : tout ce qui
+        // dépend de la Vibe reçoit la valeur interpolée, jamais `vibe` brute —
+        // voir AnimatedVibeTheme.
+        body: AnimatedVibeTheme(
+          vibe: vibe,
+          builder: (context, animatedVibe, child) {
+            // Section 4.1 : le fond (FluidBackground ou vidéo) englobe désormais
+            // tout le PageView (Player + Queue) plutôt que la seule page 1 — la
+            // Vibe reste donc visible et animée pendant le swipe vers la Queue
+            // au lieu de disparaître derrière un fond vide.
+            final Widget pageView = PageView(
+              key: _pageViewKey,
+              children: [
+                _PlayerPage(
+                  tempoController: _tempoController,
+                  vibe: animatedVibe,
+                  player: player,
+                  coverKey: _coverKey,
+                  playlistCoverImagePath: playlistCoverImagePath,
+                ),
+                const QueueScreen(),
+              ],
+            );
 
-          // Section 4.3 : une vidéo de fond personnalisée remplace
-          // entièrement le shader/dégradé/effet — jamais superposée.
-          final String? videoPath = animatedVibe.customBackgroundVideoPath;
-          if (videoPath != null) {
-            return VibeVideoBackground(videoPath: videoPath, child: pageView);
-          }
+            // Section 4.3 : une vidéo de fond personnalisée remplace
+            // entièrement le shader/dégradé/effet — jamais superposée.
+            final String? videoPath = animatedVibe.customBackgroundVideoPath;
+            if (videoPath != null) {
+              return VibeVideoBackground(videoPath: videoPath, child: pageView);
+            }
 
-          return FluidBackground(
-            tempoController: _tempoController,
-            vibe: animatedVibe,
-            coverArtPath: effectiveCoverArtPath,
-            coverKey: _coverKey,
-            child: _VibeBackgroundImageLayer(
-                backgroundImagePath: animatedVibe.backgroundImagePath,
-                child: pageView),
-          );
-        },
+            return FluidBackground(
+              tempoController: _tempoController,
+              vibe: animatedVibe,
+              coverArtPath: effectiveCoverArtPath,
+              coverKey: _coverKey,
+              child: _VibeBackgroundImageLayer(backgroundImagePath: animatedVibe.backgroundImagePath, child: pageView),
+            );
+          },
+        ),
       ),
     );
   }
+}
+
+/// Partie "barre d'état" de [SystemUiOverlayStyle.light] / `.dark`
+/// uniquement. Les champs de la barre de navigation sont laissés à `null`
+/// (inchangés) : le style complet `.light` impose aussi une barre de
+/// navigation noire à icônes claires, alors qu'ici le bas de l'écran est la
+/// NavigationBar claire de la coque — la barre gestuelle y deviendrait
+/// invisible.
+const SystemUiOverlayStyle _kLightStatusBarIcons = SystemUiOverlayStyle(
+  statusBarColor: Colors.transparent,
+  statusBarIconBrightness: Brightness.light, // Android : icônes blanches
+  statusBarBrightness: Brightness.dark, // iOS : même effet, sémantique inverse
+);
+
+const SystemUiOverlayStyle _kDarkStatusBarIcons = SystemUiOverlayStyle(
+  statusBarColor: Colors.transparent,
+  statusBarIconBrightness: Brightness.dark,
+  statusBarBrightness: Brightness.light,
+);
+
+/// Space/New OLED (noir pur) et Neon (photo nocturne) sont toujours sombres ;
+/// les autres Vibes sont jugées sur la moyenne de leurs couleurs de fond,
+/// composées sur [underlay] (le fond du Scaffold, visible sous les couleurs
+/// semi-transparentes de Glassmorphism par exemple).
+SystemUiOverlayStyle _statusBarStyleFor(VibeVisual vibe, Color underlay) {
+  final bool darkBackground = switch (vibe.preset) {
+    VibePreset.oled || VibePreset.newOled || VibePreset.neon => true,
+    _ =>
+      ThemeData.estimateBrightnessForColor(_averageBackgroundColor(vibe.gradientColors, underlay)) == Brightness.dark,
+  };
+  return darkBackground ? _kLightStatusBarIcons : _kDarkStatusBarIcons;
+}
+
+Color _averageBackgroundColor(List<Color> colors, Color underlay) {
+  if (colors.isEmpty) return underlay;
+  double r = 0, g = 0, b = 0;
+  for (final Color color in colors) {
+    final Color opaque = Color.alphaBlend(color, underlay);
+    r += opaque.r;
+    g += opaque.g;
+    b += opaque.b;
+  }
+  final int n = colors.length;
+  return Color.from(alpha: 1, red: r / n, green: g / n, blue: b / n);
 }
 
 /// Image de fond personnalisée (Vibe Creator, `VibePreset.custom`) posée
@@ -192,8 +237,7 @@ class _MasterPlayerScreenState extends ConsumerState<MasterPlayerScreen>
 /// `_PlayerPage` pour s'appliquer à tout le PageView (voir Section 4.1)
 /// plutôt qu'à sa seule page 1.
 class _VibeBackgroundImageLayer extends StatelessWidget {
-  const _VibeBackgroundImageLayer(
-      {required this.backgroundImagePath, required this.child});
+  const _VibeBackgroundImageLayer({required this.backgroundImagePath, required this.child});
 
   final String? backgroundImagePath;
   final Widget child;
@@ -253,8 +297,7 @@ class _PlayerPage extends ConsumerStatefulWidget {
 /// vit dans [playerImmersiveModeProvider] (pas un simple `bool` local) pour
 /// que la coque de navigation (`_TabShell`, router.dart) puisse le lire et
 /// le forcer à `false` depuis le bouton Retour Android (Section 2.B).
-class _PlayerPageState extends ConsumerState<_PlayerPage>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+class _PlayerPageState extends ConsumerState<_PlayerPage> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   // Section 3 : 7s (au lieu des 15s précédentes) avant le passage automatique
   // en mode Canvas/Focus.
   static const Duration _inactivityDelay = Duration(seconds: 7);
@@ -301,8 +344,7 @@ class _PlayerPageState extends ConsumerState<_PlayerPage>
     vsync: this,
     duration: const Duration(milliseconds: 3200),
   )..repeat(reverse: true);
-  late final Animation<double> _floatAnimation =
-      CurvedAnimation(parent: _floatController, curve: Curves.easeInOut);
+  late final Animation<double> _floatAnimation = CurvedAnimation(parent: _floatController, curve: Curves.easeInOut);
 
   @override
   void initState() {
@@ -473,17 +515,13 @@ class _PlayerPageState extends ConsumerState<_PlayerPage>
     // coverImagePath), jamais `null` directement en base.
     final String? albumArtPath = (track?.coverArtPath.isNotEmpty ?? false)
         ? track!.coverArtPath
-        : ((widget.playlistCoverImagePath?.isNotEmpty ?? false)
-            ? widget.playlistCoverImagePath
-            : null);
+        : ((widget.playlistCoverImagePath?.isNotEmpty ?? false) ? widget.playlistCoverImagePath : null);
 
     final Widget albumArt = AnimatedBuilder(
       animation: _floatAnimation,
       builder: (context, child) {
-        final double floatOffset =
-            immersive ? (_floatAnimation.value - 0.5) * 16 : 0;
-        return Transform.translate(
-            offset: Offset(0, floatOffset), child: child);
+        final double floatOffset = immersive ? (_floatAnimation.value - 0.5) * 16 : 0;
+        return Transform.translate(offset: Offset(0, floatOffset), child: child);
       },
       child: AnimatedScale(
         scale: immersive ? 1.12 : 1.0,
@@ -515,11 +553,9 @@ class _PlayerPageState extends ConsumerState<_PlayerPage>
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   return SingleChildScrollView(
-                    physics:
-                        immersive ? const NeverScrollableScrollPhysics() : null,
+                    physics: immersive ? const NeverScrollableScrollPhysics() : null,
                     child: ConstrainedBox(
-                      constraints:
-                          BoxConstraints(minHeight: constraints.maxHeight),
+                      constraints: BoxConstraints(minHeight: constraints.maxHeight),
                       child: Column(
                         // QA "Polish & Final UI Fixes" (retest) : toujours
                         // `center`, même sans pochette — voir juste en dessous
@@ -569,10 +605,8 @@ class _PlayerPageState extends ConsumerState<_PlayerPage>
                                       // titre/artiste long.
                                       Text(
                                         track?.title ?? 'Aucune lecture',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .titleLarge
-                                            ?.copyWith(color: vibe.accentColor),
+                                        style:
+                                            Theme.of(context).textTheme.titleLarge?.copyWith(color: vibe.accentColor),
                                         textAlign: TextAlign.center,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
@@ -580,10 +614,8 @@ class _PlayerPageState extends ConsumerState<_PlayerPage>
                                       const SizedBox(height: 4),
                                       Text(
                                         track?.artists.join(', ') ?? '',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodyMedium
-                                            ?.copyWith(color: vibe.accentColor),
+                                        style:
+                                            Theme.of(context).textTheme.bodyMedium?.copyWith(color: vibe.accentColor),
                                         textAlign: TextAlign.center,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
@@ -605,18 +637,13 @@ class _PlayerPageState extends ConsumerState<_PlayerPage>
                                     children: [
                                       const SizedBox(height: 16),
                                       ProgressSlider(
-                                        fallbackDuration:
-                                            track?.effectivePlaybackDuration ??
-                                                Duration.zero,
+                                        fallbackDuration: track?.effectivePlaybackDuration ?? Duration.zero,
                                         color: vibe.accentColor,
                                       ),
                                       const SizedBox(height: 8),
-                                      _PlaybackControls(
-                                          vibe: vibe, isPlaying: isPlaying),
+                                      _PlaybackControls(vibe: vibe, isPlaying: isPlaying),
                                       const SizedBox(height: 8),
-                                      if (track != null)
-                                        _TrackActions(
-                                            trackId: track.id, vibe: vibe),
+                                      if (track != null) _TrackActions(trackId: track.id, vibe: vibe),
                                     ],
                                   ),
                                 ),
@@ -669,8 +696,7 @@ class _PlayerPageState extends ConsumerState<_PlayerPage>
                   opacity: (immersive && !isNewOledFocus) ? 1 : 0,
                   duration: _fadeDuration,
                   curve: Curves.easeInOut,
-                  child: _ImmersiveCaption(
-                      track: track, accentColor: vibe.accentColor),
+                  child: _ImmersiveCaption(track: track, accentColor: vibe.accentColor),
                 ),
               ),
             ),
@@ -716,19 +742,13 @@ class _ImmersiveCaption extends StatelessWidget {
         Text(
           track!.title,
           textAlign: TextAlign.center,
-          style: Theme.of(context)
-              .textTheme
-              .titleMedium
-              ?.copyWith(color: accentColor, letterSpacing: 0.5),
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(color: accentColor, letterSpacing: 0.5),
         ),
         const SizedBox(height: 4),
         Text(
           subtitle,
           textAlign: TextAlign.center,
-          style: Theme.of(context)
-              .textTheme
-              .bodySmall
-              ?.copyWith(color: accentColor.withValues(alpha: 0.8)),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: accentColor.withValues(alpha: 0.8)),
         ),
       ],
     );
@@ -738,11 +758,7 @@ class _ImmersiveCaption extends StatelessWidget {
 /// Bouton en overlay translucide : garde l'écran immersif lisible sur un
 /// preset sombre (OLED) comme sur un dégradé clair (Minimal), sans AppBar.
 class _OverlayIconButton extends StatelessWidget {
-  const _OverlayIconButton(
-      {required this.icon,
-      required this.color,
-      required this.tooltip,
-      required this.onPressed});
+  const _OverlayIconButton({required this.icon, required this.color, required this.tooltip, required this.onPressed});
 
   final IconData icon;
   final Color color;
@@ -754,10 +770,7 @@ class _OverlayIconButton extends StatelessWidget {
     return Material(
       color: Colors.black.withValues(alpha: 0.25),
       shape: const CircleBorder(),
-      child: IconButton(
-          icon: Icon(icon, color: color),
-          tooltip: tooltip,
-          onPressed: onPressed),
+      child: IconButton(icon: Icon(icon, color: color), tooltip: tooltip, onPressed: onPressed),
     );
   }
 }
@@ -770,18 +783,13 @@ class _PlaybackControls extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final PlayerController controller =
-        ref.read(playerControllerProvider.notifier);
-    final PlayerRepeatMode repeatMode =
-        ref.watch(playerControllerProvider.select((s) => s.repeatMode));
+    final PlayerController controller = ref.read(playerControllerProvider.notifier);
+    final PlayerRepeatMode repeatMode = ref.watch(playerControllerProvider.select((s) => s.repeatMode));
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
-        _RepeatModeButton(
-            mode: repeatMode,
-            color: vibe.accentColor,
-            onPressed: controller.cycleRepeatMode),
+        _RepeatModeButton(mode: repeatMode, color: vibe.accentColor, onPressed: controller.cycleRepeatMode),
         IconButton(
           iconSize: 36,
           color: vibe.accentColor,
@@ -791,8 +799,7 @@ class _PlaybackControls extends ConsumerWidget {
         IconButton(
           iconSize: 64,
           color: vibe.accentColor,
-          icon: Icon(
-              isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled),
+          icon: Icon(isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled),
           onPressed: controller.togglePlayPause,
         ),
         IconButton(
@@ -813,8 +820,7 @@ class _PlaybackControls extends ConsumerWidget {
 /// Bouton unique cyclant les 3 modes de lecture (Feuille de route pt.2) :
 /// ordre de la playlist -> aléatoire -> répétition du titre.
 class _RepeatModeButton extends StatelessWidget {
-  const _RepeatModeButton(
-      {required this.mode, required this.color, required this.onPressed});
+  const _RepeatModeButton({required this.mode, required this.color, required this.onPressed});
 
   final PlayerRepeatMode mode;
   final Color color;
@@ -823,18 +829,9 @@ class _RepeatModeButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (IconData icon, String tooltip) = switch (mode) {
-      PlayerRepeatMode.playlistOrder => (
-          Icons.repeat,
-          'Ordre de la playlist — appuyer pour activer l\'aléatoire'
-        ),
-      PlayerRepeatMode.shuffle => (
-          Icons.shuffle,
-          'Lecture aléatoire — appuyer pour répéter le titre'
-        ),
-      PlayerRepeatMode.repeatOne => (
-          Icons.repeat_one,
-          'Répétition du titre — appuyer pour revenir à l\'ordre normal'
-        ),
+      PlayerRepeatMode.playlistOrder => (Icons.repeat, 'Ordre de la playlist — appuyer pour activer l\'aléatoire'),
+      PlayerRepeatMode.shuffle => (Icons.shuffle, 'Lecture aléatoire — appuyer pour répéter le titre'),
+      PlayerRepeatMode.repeatOne => (Icons.repeat_one, 'Répétition du titre — appuyer pour revenir à l\'ordre normal'),
     };
     // Mode "ordre de la playlist" = repli neutre, atténué ; les deux modes
     // actifs (aléatoire/répétition) restent pleinement colorés pour rester

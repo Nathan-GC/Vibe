@@ -80,7 +80,8 @@ void main() {
     test('renames a single artist across all their tracks while preserving other metadata', () async {
       await repository.upsertTrack(scannedTrack(id: 't1', artists: ['Artist & A']));
       await (db.update(db.tracks)..where((t) => t.id.equals('t1'))).write(
-        const TracksCompanion(album: Value('Some Album'), releaseYear: Value(2020), coverArtPath: Value('local/cover.jpg')),
+        const TracksCompanion(
+            album: Value('Some Album'), releaseYear: Value(2020), coverArtPath: Value('local/cover.jpg')),
       );
 
       await repository.renameOrMergeArtists(['Artist & A'], 'Artist');
@@ -95,7 +96,8 @@ void main() {
       expect(artistRows.map((r) => r.artistName).toList(), ['Artist']);
     });
 
-    test('merges several artists into one target name, deduplicating when a track credits more than one of them', () async {
+    test('merges several artists into one target name, deduplicating when a track credits more than one of them',
+        () async {
       await repository.upsertTrack(scannedTrack(id: 't1', artists: ['Artist & A']));
       await repository.upsertTrack(scannedTrack(id: 't2', artists: ['Artist & B']));
       // Crédite déjà les deux sources sur le même morceau — la fusion ne doit

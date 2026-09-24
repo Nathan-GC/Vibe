@@ -56,7 +56,8 @@ Future<void> playPlaylistAndNavigate(BuildContext context, WidgetRef ref, Playli
 /// Une seule zone tactile (un seul InkWell) : l'ancienne distinction
 /// pochette = lecture / titre = édition (Section 3.3) est abandonnée.
 class PlaylistCard extends StatelessWidget {
-  const PlaylistCard({super.key, required this.playlist, required this.onTap, required this.onLongPress, this.width = 152});
+  const PlaylistCard(
+      {super.key, required this.playlist, required this.onTap, required this.onLongPress, this.width = 152});
 
   final Playlist playlist;
   final VoidCallback onTap;

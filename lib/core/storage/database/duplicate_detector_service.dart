@@ -33,7 +33,8 @@ class DuplicateDetectorService {
     return [
       for (final entry in byKey.entries)
         if (entry.value.length > 1)
-          DuplicateTrackGroup(title: entry.value.first.title, artist: entry.value.first.artists.join(', '), tracks: entry.value),
+          DuplicateTrackGroup(
+              title: entry.value.first.title, artist: entry.value.first.artists.join(', '), tracks: entry.value),
     ];
   }
 }

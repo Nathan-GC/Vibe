@@ -29,7 +29,8 @@ Future<void> addOnlineTrackToPlaylist(BuildContext context, WidgetRef ref, Onlin
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Pas encore dans ta bibliothèque locale — importe le fichier audio pour l'ajouter à une playlist."),
+          content:
+              Text("Pas encore dans ta bibliothèque locale — importe le fichier audio pour l'ajouter à une playlist."),
         ),
       );
     }

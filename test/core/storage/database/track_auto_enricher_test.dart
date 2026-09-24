@@ -71,7 +71,8 @@ void main() {
     await insertTrack(id: 't1', title: 'One More Time', artists: ['Daft Punk']);
     final enricher = TrackAutoEnricher(
       metadataApiClient: _FakeMetadataApiClient([
-        const OnlineTrackResult(artist: 'Daft Punk', title: 'One More Time', album: 'Discovery', coverArtUrl: 'https://x/cover.jpg'),
+        const OnlineTrackResult(
+            artist: 'Daft Punk', title: 'One More Time', album: 'Discovery', coverArtUrl: 'https://x/cover.jpg'),
       ]),
       trackRepository: repository,
     );
@@ -117,7 +118,8 @@ void main() {
     // pas ; celle en ordre inversé trouve "Beyoncé - Halo" avec confiance.
     await insertTrack(id: 't1', title: 'Beyoncé', artists: ['Halo']);
     final enricher = TrackAutoEnricher(
-      metadataApiClient: _FakeMetadataApiClient(const [OnlineTrackResult(artist: 'Beyoncé', title: 'Halo', album: 'I Am... Sasha Fierce')]),
+      metadataApiClient: _FakeMetadataApiClient(
+          const [OnlineTrackResult(artist: 'Beyoncé', title: 'Halo', album: 'I Am... Sasha Fierce')]),
       trackRepository: repository,
     );
 
@@ -146,7 +148,8 @@ void main() {
   });
 
   group('enrichment circuit breaker', () {
-    test('marks a track needsManualReview after maxEnrichmentAttempts unreliable results, then skips the API entirely', () async {
+    test('marks a track needsManualReview after maxEnrichmentAttempts unreliable results, then skips the API entirely',
+        () async {
       await insertTrack(id: 't1', title: 'Feel Good', artists: ['Charlotte Cardin']);
       final client = _FakeMetadataApiClient([
         const OnlineTrackResult(artist: 'Charlotte Cardin', title: 'Confetti', album: '99 Nights'),
@@ -162,7 +165,8 @@ void main() {
       expect(track.enrichmentAttempts, TrackRepository.maxEnrichmentAttempts);
 
       final int callsBeforeExtraAttempt = client.callCount;
-      final bool okAfterBanned = await enricher.enrichTrack(trackId: 't1', title: 'Feel Good', artists: ['Charlotte Cardin']);
+      final bool okAfterBanned =
+          await enricher.enrichTrack(trackId: 't1', title: 'Feel Good', artists: ['Charlotte Cardin']);
       expect(okAfterBanned, isFalse);
       expect(client.callCount, callsBeforeExtraAttempt, reason: 'needsManualReview must not trigger another API call');
     });

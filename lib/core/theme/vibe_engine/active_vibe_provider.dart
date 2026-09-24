@@ -35,7 +35,10 @@ final Provider<VibeVisual> activeVibeProvider = Provider<VibeVisual>((ref) {
 /// froid), où un `black87` codé en dur y remplaçait par erreur ce repli.
 VibeVisual defaultVibeFor(Color userAccent) {
   return VibeVisual(
-    gradientColors: [Color.alphaBlend(userAccent.withValues(alpha: 0.12), const Color(0xFFF5F5F5)), const Color(0xFFE0E0E0)],
+    gradientColors: [
+      Color.alphaBlend(userAccent.withValues(alpha: 0.12), const Color(0xFFF5F5F5)),
+      const Color(0xFFE0E0E0)
+    ],
     accentColor: userAccent,
   );
 }

@@ -1,5 +1,11 @@
 include: package:flutter_lints/flutter.yaml
 
+# Largeur de ligne du projet pour `dart format` : 120 colonnes, la largeur
+# dans laquelle le code est majoritairement écrit (le défaut à 80 aurait
+# re-découpé ~1 500 lignes sans gain de lisibilité).
+formatter:
+  page_width: 120
+
 linter:
   rules:
     prefer_single_quotes: true

@@ -46,7 +46,8 @@ class YoutubeEnricherService {
 
     final VideoSearchList results = await _client.search.search(query);
     return results.take(resultLimit).map((video) {
-      return OnlineTrackResult(artist: video.author, title: cleanTitle(video.title), coverArtUrl: _bestThumbnail(video.thumbnails));
+      return OnlineTrackResult(
+          artist: video.author, title: cleanTitle(video.title), coverArtUrl: _bestThumbnail(video.thumbnails));
     }).toList();
   }
 

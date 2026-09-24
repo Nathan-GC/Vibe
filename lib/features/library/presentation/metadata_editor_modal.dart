@@ -140,7 +140,8 @@ class _MetadataEditorModalState extends ConsumerState<MetadataEditorModal> {
         results = switch (_searchSource) {
           EnrichmentSource.itunes =>
             await ref.read(metadataApiClientProvider).searchByArtistAndTitle(artist: artist, title: title, limit: 5),
-          EnrichmentSource.youtube => await ref.read(youtubeEnricherServiceProvider).search(artist: artist, title: title),
+          EnrichmentSource.youtube =>
+            await ref.read(youtubeEnricherServiceProvider).search(artist: artist, title: title),
         };
       } catch (_) {
         // Pas de réseau, timeout, API indisponible... — la modale reste
@@ -183,7 +184,9 @@ class _MetadataEditorModalState extends ConsumerState<MetadataEditorModal> {
     if (_artistController.text.trim() != suggestion.artist || _titleController.text.trim() != suggestion.title) {
       return EnrichmentStatus.enrichedManualEdit;
     }
-    return source == EnrichmentSource.itunes ? EnrichmentStatus.enrichedManualItunes : EnrichmentStatus.enrichedManualYoutube;
+    return source == EnrichmentSource.itunes
+        ? EnrichmentStatus.enrichedManualItunes
+        : EnrichmentStatus.enrichedManualYoutube;
   }
 
   /// Pochette manuelle (Option 2) — même mécanique que
@@ -239,7 +242,8 @@ class _MetadataEditorModalState extends ConsumerState<MetadataEditorModal> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        TextField(controller: _artistController, decoration: const InputDecoration(labelText: 'Artiste')),
+                        TextField(
+                            controller: _artistController, decoration: const InputDecoration(labelText: 'Artiste')),
                         const SizedBox(height: 12),
                         TextField(controller: _titleController, decoration: const InputDecoration(labelText: 'Titre')),
                       ],
@@ -262,7 +266,8 @@ class _MetadataEditorModalState extends ConsumerState<MetadataEditorModal> {
                   const SizedBox(width: 12),
                   Expanded(
                     flex: 2,
-                    child: TextField(controller: _genreController, decoration: const InputDecoration(labelText: 'Genre')),
+                    child:
+                        TextField(controller: _genreController, decoration: const InputDecoration(labelText: 'Genre')),
                   ),
                 ],
               ),
@@ -273,7 +278,8 @@ class _MetadataEditorModalState extends ConsumerState<MetadataEditorModal> {
                 width: double.infinity,
                 child: SegmentedButton<EnrichmentSource>(
                   segments: const [
-                    ButtonSegment(value: EnrichmentSource.itunes, label: Text('iTunes'), icon: Icon(Icons.apple, size: 16)),
+                    ButtonSegment(
+                        value: EnrichmentSource.itunes, label: Text('iTunes'), icon: Icon(Icons.apple, size: 16)),
                     ButtonSegment(
                       value: EnrichmentSource.youtube,
                       label: Text('YouTube'),
@@ -319,7 +325,8 @@ class _MetadataEditorModalState extends ConsumerState<MetadataEditorModal> {
                 ],
               ),
               const SizedBox(height: 8),
-              if (_loadingSuggestions) const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator())
+              if (_loadingSuggestions)
+                const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator())
               else if (_fetchFailed)
                 Row(
                   children: [
@@ -343,10 +350,13 @@ class _MetadataEditorModalState extends ConsumerState<MetadataEditorModal> {
                             child: Image.network(suggestion.coverArtUrl!, width: 40, height: 40, fit: BoxFit.cover),
                           )
                         : const Icon(Icons.album_outlined),
-                    title: Text('${suggestion.artist} - ${suggestion.title}', maxLines: 1, overflow: TextOverflow.ellipsis),
+                    title: Text('${suggestion.artist} - ${suggestion.title}',
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
                     subtitle: Text(
-                      [if (suggestion.album != null) suggestion.album!, if (suggestion.releaseYear != null) '${suggestion.releaseYear}']
-                          .join(', '),
+                      [
+                        if (suggestion.album != null) suggestion.album!,
+                        if (suggestion.releaseYear != null) '${suggestion.releaseYear}'
+                      ].join(', '),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -355,7 +365,8 @@ class _MetadataEditorModalState extends ConsumerState<MetadataEditorModal> {
                         : IconButton(
                             icon: Icon(isPlayingThis ? Icons.stop_circle_outlined : Icons.play_circle_outline),
                             tooltip: isPlayingThis ? 'Arrêter la preview' : 'Écouter un extrait',
-                            onPressed: () => ref.read(previewPlayerControllerProvider.notifier).togglePreview(previewUrl),
+                            onPressed: () =>
+                                ref.read(previewPlayerControllerProvider.notifier).togglePreview(previewUrl),
                           ),
                     onTap: () => _applySuggestion(suggestion),
                   );

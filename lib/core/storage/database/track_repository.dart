@@ -110,7 +110,8 @@ class TrackRepository {
               // Voir [EnrichmentStatus] : un morceau ambigu dès le nom de
               // fichier ne doit pas gaspiller de tentative d'enrichissement
               // automatique tant qu'un humain n'a pas confirmé Titre/Artiste.
-              enrichmentStatus: Value(scanned.requiresUserReview ? EnrichmentStatus.requiresReview : EnrichmentStatus.pending),
+              enrichmentStatus:
+                  Value(scanned.requiresUserReview ? EnrichmentStatus.requiresReview : EnrichmentStatus.pending),
             ),
           );
 
@@ -246,13 +247,15 @@ class TrackRepository {
   /// jamais appelé après une simple erreur réseau/timeout, qui ne doit pas
   /// consommer de tentative (voir [TrackAutoEnricher.enrichTrack]). [source]
   /// détermine le statut de provenance appliqué en cas de succès (Section 1).
-  Future<void> recordEnrichmentOutcome(String trackId, {required bool success, required EnrichmentSource source}) async {
+  Future<void> recordEnrichmentOutcome(String trackId,
+      {required bool success, required EnrichmentSource source}) async {
     final Track? track = await findById(trackId);
     if (track == null) return;
 
     if (success) {
-      final EnrichmentStatus status =
-          source == EnrichmentSource.itunes ? EnrichmentStatus.enrichedAutoItunes : EnrichmentStatus.enrichedAutoYoutube;
+      final EnrichmentStatus status = source == EnrichmentSource.itunes
+          ? EnrichmentStatus.enrichedAutoItunes
+          : EnrichmentStatus.enrichedAutoYoutube;
       await (_db.update(_db.tracks)..where((t) => t.id.equals(trackId))).write(
         TracksCompanion(enrichmentStatus: Value(status)),
       );
@@ -304,15 +307,18 @@ class TrackRepository {
         album: (track.album.isEmpty && (match.album?.isNotEmpty ?? false)) ? Value(match.album!) : const Value.absent(),
         releaseYear:
             (track.releaseYear == 0 && match.releaseYear != null) ? Value(match.releaseYear!) : const Value.absent(),
-        coverArtPath:
-            (track.coverArtPath.isEmpty && match.coverArtUrl != null) ? Value(match.coverArtUrl!) : const Value.absent(),
+        coverArtPath: (track.coverArtPath.isEmpty && match.coverArtUrl != null)
+            ? Value(match.coverArtUrl!)
+            : const Value.absent(),
         // Ordre officiel d'album (organisation de la bibliothèque, voir
         // AlbumGroup) — comblé seulement si jamais renseigné (scan local sans
         // ces tags ID3).
         trackNumber:
             (track.trackNumber == 0 && match.trackNumber != null) ? Value(match.trackNumber!) : const Value.absent(),
-        discNumber: (track.discNumber == 0 && match.discNumber != null) ? Value(match.discNumber!) : const Value.absent(),
-        trackCount: (track.trackCount == 0 && match.trackCount != null) ? Value(match.trackCount!) : const Value.absent(),
+        discNumber:
+            (track.discNumber == 0 && match.discNumber != null) ? Value(match.discNumber!) : const Value.absent(),
+        trackCount:
+            (track.trackCount == 0 && match.trackCount != null) ? Value(match.trackCount!) : const Value.absent(),
         tags: Value(keywords),
       ),
     );
@@ -359,7 +365,8 @@ class TrackRepository {
           title: Value(match.title),
           artists: Value([correctedArtist]),
           requiresUserReview: const Value(false),
-          album: (track.album.isEmpty && (match.album?.isNotEmpty ?? false)) ? Value(match.album!) : const Value.absent(),
+          album:
+              (track.album.isEmpty && (match.album?.isNotEmpty ?? false)) ? Value(match.album!) : const Value.absent(),
           releaseYear:
               (track.releaseYear == 0 && match.releaseYear != null) ? Value(match.releaseYear!) : const Value.absent(),
           coverArtPath: (track.coverArtPath.isEmpty && match.coverArtUrl != null)
@@ -509,5 +516,4 @@ class TrackRepository {
       }
     });
   }
-
 }

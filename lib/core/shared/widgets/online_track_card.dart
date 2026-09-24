@@ -45,7 +45,8 @@ class OnlineTrackCard extends ConsumerWidget {
                 ),
                 child: Text(
                   'E',
-                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.surface),
+                  style: TextStyle(
+                      fontSize: 10, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.surface),
                 ),
               ),
             ],

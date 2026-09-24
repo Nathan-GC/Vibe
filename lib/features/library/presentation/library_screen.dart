@@ -31,8 +31,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   String? _statusMessage;
 
   Future<void> _importFiles() async {
-    final List<PlatformFile> picked =
-        await FilePicker.pickFiles(type: FileType.audio);
+    final List<PlatformFile> picked = await FilePicker.pickFiles(type: FileType.audio);
     if (picked.isEmpty) return;
 
     setState(() {
@@ -59,10 +58,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         final String? path = picked[i].path;
         if (path != null) {
           try {
-            final ImportedAudioFile copied =
-                await storageManager.importAudioFile(File(path));
-            final ScannedTrack? track =
-                await scanService.processImportedFile(copied);
+            final ImportedAudioFile copied = await storageManager.importAudioFile(File(path));
+            final ScannedTrack? track = await scanService.processImportedFile(copied);
             if (track != null) {
               await repository.upsertTrack(track);
               imported++;
@@ -84,8 +81,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         }
 
         if (mounted) {
-          setState(
-              () => _statusMessage = 'Import ${i + 1} / ${picked.length}...');
+          setState(() => _statusMessage = 'Import ${i + 1} / ${picked.length}...');
         }
       }
 
@@ -99,8 +95,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         final TrackEnricher enricher = ref.read(trackAutoEnricherProvider);
         for (int i = 0; i < renamedTracks.length; i++) {
           if (mounted) {
-            setState(() => _statusMessage =
-                'Enrichissement ${i + 1} / ${renamedTracks.length}...');
+            setState(() => _statusMessage = 'Enrichissement ${i + 1} / ${renamedTracks.length}...');
           }
           final ScannedTrack track = renamedTracks[i];
           final bool ok = await enricher.enrichTrack(
@@ -115,18 +110,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       if (!mounted) return;
       final String summary = [
         '$imported importé(s)',
-        if (renamedTracks.isNotEmpty)
-          '$enriched/${renamedTracks.length} renommé(s) enrichi(s)',
+        if (renamedTracks.isNotEmpty) '$enriched/${renamedTracks.length} renommé(s) enrichi(s)',
         if (tooShort > 0) '$tooShort trop court(s) ou illisible(s)',
-        if (failed > 0)
-          '$failed échec(s)${lastError == null ? '' : ' : $lastError'}',
+        if (failed > 0) '$failed échec(s)${lastError == null ? '' : ' : $lastError'}',
       ].join(', ');
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(summary)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(summary)));
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Import impossible : $error')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Import impossible : $error')));
       }
     } finally {
       if (mounted) {
@@ -139,17 +130,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   }
 
   void _openMetadataEditor(Track track) {
-    showDialog<void>(
-        context: context,
-        builder: (context) => MetadataEditorModal(track: track));
+    showDialog<void>(context: context, builder: (context) => MetadataEditorModal(track: track));
   }
 
   /// Choix de la source pour un enrichissement global (Section 2.1) —
   /// affiché une fois par lancement d'"Enrichir tout" ou post-import, jamais
   /// pour un enrichissement individuel (voir MetadataEditorModal pour le
   /// choix de source par morceau). `null` si l'utilisateur annule.
-  Future<EnrichmentSource?> _pickEnrichmentSource() =>
-      showEnrichmentSourceDialog(context);
+  Future<EnrichmentSource?> _pickEnrichmentSource() => showEnrichmentSourceDialog(context);
 
   TrackEnricher _enricherFor(EnrichmentSource source) => switch (source) {
         EnrichmentSource.itunes => ref.read(trackAutoEnricherProvider),
@@ -160,15 +148,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   /// les variantes de casse d'un même nom ("DAFT PUNK"/"daft punk") sous une
   /// unique entité en Title Case.
   Future<void> _mergeArtists() async {
-    final int mergedGroups =
-        await ref.read(trackRepositoryProvider).mergeDuplicateCaseArtists();
+    final int mergedGroups = await ref.read(trackRepositoryProvider).mergeDuplicateCaseArtists();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          mergedGroups == 0
-              ? 'Aucun doublon de casse trouvé.'
-              : '$mergedGroups artiste(s) fusionné(s).',
+          mergedGroups == 0 ? 'Aucun doublon de casse trouvé.' : '$mergedGroups artiste(s) fusionné(s).',
         ),
       ),
     );
@@ -179,8 +164,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   /// genre / époque en base. Non destructif (voir
   /// TrackRepository.enrichFromOnlineMetadata) : sûr à relancer.
   Future<bool> _enrichTrack(Track track, TrackEnricher enricher) {
-    return enricher.enrichTrack(
-        trackId: track.id, title: track.title, artists: track.artists);
+    return enricher.enrichTrack(trackId: track.id, title: track.title, artists: track.artists);
   }
 
   /// Enrichissement individuel (bouton rapide sur un morceau) — toujours
@@ -190,17 +174,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   Future<void> _enrichSingle(Track track) async {
     final TrackEnricher enricher = ref.read(trackAutoEnricherProvider);
     bool found = false;
-    for (int attempt = 1;
-        attempt <= _maxEnrichmentPasses && !found;
-        attempt++) {
+    for (int attempt = 1; attempt <= _maxEnrichmentPasses && !found; attempt++) {
       found = await _enrichTrack(track, enricher);
     }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-          content: Text(found
-              ? 'Pochette et genres mis à jour'
-              : 'Aucune correspondance trouvée')),
+      SnackBar(content: Text(found ? 'Pochette et genres mis à jour' : 'Aucune correspondance trouvée')),
     );
   }
 
@@ -221,8 +200,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     List<Track> targets = all.where(trackNeedsEnrichment).toList();
     if (targets.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Rien à enrichir.')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Rien à enrichir.')));
       }
       return;
     }
@@ -236,14 +214,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     int totalEnriched = 0;
     final int totalTargets = targets.length;
 
-    for (int pass = 1;
-        pass <= _maxEnrichmentPasses && targets.isNotEmpty;
-        pass++) {
+    for (int pass = 1; pass <= _maxEnrichmentPasses && targets.isNotEmpty; pass++) {
       int enrichedThisPass = 0;
       for (int i = 0; i < targets.length; i++) {
         if (mounted) {
-          setState(() => _statusMessage =
-              'Enrichissement (passe $pass/$_maxEnrichmentPasses) ${i + 1} / ${targets.length}...');
+          setState(() =>
+              _statusMessage = 'Enrichissement (passe $pass/$_maxEnrichmentPasses) ${i + 1} / ${targets.length}...');
         }
         if (await _enrichTrack(targets[i], enricher)) {
           enrichedThisPass++;
@@ -261,9 +237,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-          content:
-              Text('$totalEnriched / $totalTargets morceau(x) enrichi(s)')),
+      SnackBar(content: Text('$totalEnriched / $totalTargets morceau(x) enrichi(s)')),
     );
     setState(() {
       _busy = false;
@@ -288,12 +262,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           'L\'enrichissement peut avoir révélé des variantes de casse du même artiste (ex. "DAFT PUNK" / "Daft Punk").',
         ),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Plus tard')),
-          TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Fusionner')),
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Plus tard')),
+          TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Fusionner')),
         ],
       ),
     );
@@ -303,20 +273,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   @override
   Widget build(BuildContext context) {
     final AsyncValue<List<Track>> allTracks = ref.watch(libraryTracksProvider);
-    final AsyncValue<List<Track>> needsReviewTracks =
-        ref.watch(needsReviewTracksProvider);
-    final List<Track> needsEnrichmentTracks =
-        ref.watch(tracksNeedingEnrichmentProvider);
-    final List<DuplicateTrackGroup> duplicateGroups =
-        ref.watch(duplicateTrackGroupsProvider).value ?? const [];
+    final AsyncValue<List<Track>> needsReviewTracks = ref.watch(needsReviewTracksProvider);
+    final List<Track> needsEnrichmentTracks = ref.watch(tracksNeedingEnrichmentProvider);
+    final List<DuplicateTrackGroup> duplicateGroups = ref.watch(duplicateTrackGroupsProvider).value ?? const [];
     final bool reviewFilterActive = ref.watch(libraryReviewFilterProvider);
-    final bool enrichmentFilterActive =
-        ref.watch(libraryEnrichmentFilterProvider);
-    final Set<EnrichmentProvenanceFilter> provenanceFilters =
-        ref.watch(libraryProvenanceFilterProvider);
+    final bool enrichmentFilterActive = ref.watch(libraryEnrichmentFilterProvider);
+    final Set<EnrichmentProvenanceFilter> provenanceFilters = ref.watch(libraryProvenanceFilterProvider);
     final LibrarySort sort = ref.watch(librarySortProvider);
-    final int needsReviewCount = needsReviewTracks.maybeWhen(
-        data: (data) => data.length, orElse: () => 0);
+    final int needsReviewCount = needsReviewTracks.maybeWhen(data: (data) => data.length, orElse: () => 0);
     final int needsEnrichmentCount = needsEnrichmentTracks.length;
     final List<Track> allTracksData = allTracks.value ?? const [];
     final bool provenanceFilterActive = provenanceFilters.isNotEmpty;
@@ -332,8 +296,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     // Ergonomie navigation Android (2.B) : un filtre actif est un état de la
     // page, pas une vraie route/modale — le bouton Retour doit d'abord
     // l'effacer avant de vraiment quitter cette page.
-    final bool filterActive =
-        reviewFilterActive || enrichmentFilterActive || provenanceFilterActive;
+    final bool filterActive = reviewFilterActive || enrichmentFilterActive || provenanceFilterActive;
 
     return PopScope(
       canPop: !filterActive,
@@ -357,12 +320,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               icon: const Icon(Icons.sort),
               tooltip: 'Trier',
               initialValue: sort,
-              onSelected: (value) =>
-                  ref.read(librarySortProvider.notifier).setSort(value),
-              itemBuilder: (context) => LibrarySort.values
-                  .map((value) =>
-                      PopupMenuItem(value: value, child: Text(value.label)))
-                  .toList(),
+              onSelected: (value) => ref.read(librarySortProvider.notifier).setSort(value),
+              itemBuilder: (context) =>
+                  LibrarySort.values.map((value) => PopupMenuItem(value: value, child: Text(value.label))).toList(),
             ),
             IconButton(
               icon: const Icon(Icons.auto_awesome_outlined),
@@ -394,31 +354,24 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 child: OutlinedButton.icon(
                   icon: const Icon(Icons.people_outline),
                   label: const Text('Fusionner des artistes'),
-                  onPressed: _busy
-                      ? null
-                      : () => context.push('/space/library/artist-fusion'),
+                  onPressed: _busy ? null : () => context.push('/space/library/artist-fusion'),
                 ),
               ),
             ),
             if (_busy)
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 child: Column(
                   children: [
                     const LinearProgressIndicator(),
                     const SizedBox(height: 4),
-                    Text(_statusMessage ?? '',
-                        style: Theme.of(context).textTheme.bodySmall),
+                    Text(_statusMessage ?? '', style: Theme.of(context).textTheme.bodySmall),
                   ],
                 ),
               ),
-            if (needsReviewCount > 0 ||
-                needsEnrichmentCount > 0 ||
-                duplicateGroups.isNotEmpty)
+            if (needsReviewCount > 0 || needsEnrichmentCount > 0 || duplicateGroups.isNotEmpty)
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Wrap(
@@ -427,22 +380,16 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                       if (needsReviewCount > 0)
                         FilterChip(
                           label: Text('À vérifier ($needsReviewCount)'),
-                          avatar: const Icon(Icons.warning_amber_outlined,
-                              size: 18, color: Colors.amber),
+                          avatar: const Icon(Icons.warning_amber_outlined, size: 18, color: Colors.amber),
                           selected: reviewFilterActive,
-                          onSelected: (_) => ref
-                              .read(libraryReviewFilterProvider.notifier)
-                              .toggle(),
+                          onSelected: (_) => ref.read(libraryReviewFilterProvider.notifier).toggle(),
                         ),
                       if (needsEnrichmentCount > 0)
                         FilterChip(
                           label: Text('À enrichir ($needsEnrichmentCount)'),
-                          avatar:
-                              const Icon(Icons.auto_awesome_outlined, size: 18),
+                          avatar: const Icon(Icons.auto_awesome_outlined, size: 18),
                           selected: enrichmentFilterActive,
-                          onSelected: (_) => ref
-                              .read(libraryEnrichmentFilterProvider.notifier)
-                              .toggle(),
+                          onSelected: (_) => ref.read(libraryEnrichmentFilterProvider.notifier).toggle(),
                         ),
                       // Alerte doublons stricts (Titre + Artiste identiques) —
                       // navigue vers un écran dédié plutôt qu'un filtre en
@@ -450,12 +397,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                       // métadonnées, pas avec un simple filtrage de la liste.
                       if (duplicateGroups.isNotEmpty)
                         ActionChip(
-                          label: Text(
-                              'Doublons détectés (${duplicateGroups.length})'),
-                          avatar: const Icon(Icons.content_copy_outlined,
-                              size: 18, color: Colors.redAccent),
-                          onPressed: () =>
-                              context.push('/space/library/duplicates'),
+                          label: Text('Doublons détectés (${duplicateGroups.length})'),
+                          avatar: const Icon(Icons.content_copy_outlined, size: 18, color: Colors.redAccent),
+                          onPressed: () => context.push('/space/library/duplicates'),
                         ),
                     ],
                   ),
@@ -470,8 +414,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 t.enrichmentStatus != EnrichmentStatus.pending &&
                 t.enrichmentStatus != EnrichmentStatus.requiresReview))
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Wrap(
@@ -480,17 +423,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                     children: [
                       for (final filter in EnrichmentProvenanceFilter.values)
                         Builder(builder: (context) {
-                          final int count = allTracksData
-                              .where((t) => filter.matchingStatuses
-                                  .contains(t.enrichmentStatus))
-                              .length;
+                          final int count =
+                              allTracksData.where((t) => filter.matchingStatuses.contains(t.enrichmentStatus)).length;
                           if (count == 0) return const SizedBox.shrink();
                           return FilterChip(
                             label: Text('${filter.label} ($count)'),
                             selected: provenanceFilters.contains(filter),
-                            onSelected: (_) => ref
-                                .read(libraryProvenanceFilterProvider.notifier)
-                                .toggle(filter),
+                            onSelected: (_) => ref.read(libraryProvenanceFilterProvider.notifier).toggle(filter),
                           );
                         }),
                     ],
@@ -502,8 +441,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               child: tracks.when(
                 data: (unsorted) {
                   if (unsorted.isEmpty) {
-                    return const Center(
-                        child: Text('Aucun morceau — importe des MP3.'));
+                    return const Center(child: Text('Aucun morceau — importe des MP3.'));
                   }
                   final List<Track> data = sortLibraryTracks(unsorted, sort);
                   return ListView.builder(
@@ -513,20 +451,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                       final int minutes = track.durationSeconds ~/ 60;
                       final int seconds = track.durationSeconds % 60;
                       return ListTile(
-                        leading: _CoverThumbnail(
-                            path: track.coverArtPath,
-                            needsReview: track.requiresUserReview),
-                        title: Text(track.title,
-                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                        leading: _CoverThumbnail(path: track.coverArtPath, needsReview: track.requiresUserReview),
+                        title: Text(track.title, maxLines: 1, overflow: TextOverflow.ellipsis),
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              [
-                                track.artists.join(', '),
-                                if (track.album.isNotEmpty) track.album
-                              ].join(' · '),
+                              [track.artists.join(', '), if (track.album.isNotEmpty) track.album].join(' · '),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -535,21 +467,16 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                                 track.tags.join(' · '),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(fontStyle: FontStyle.italic),
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic),
                               ),
                           ],
                         ),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(
-                                '$minutes:${seconds.toString().padLeft(2, '0')}'),
+                            Text('$minutes:${seconds.toString().padLeft(2, '0')}'),
                             IconButton(
-                              icon: const Icon(Icons.auto_awesome_outlined,
-                                  size: 20),
+                              icon: const Icon(Icons.auto_awesome_outlined, size: 20),
                               tooltip: 'Enrichir (pochette HD + genres)',
                               onPressed: () => _enrichSingle(track),
                             ),
@@ -559,8 +486,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                         // vérifier" : un titre déjà enrichi doit pouvoir être
                         // ré-enrichi ou renommé sans repasser par le badge.
                         onTap: () => _openMetadataEditor(track),
-                        onLongPress: () =>
-                            TrackActionsSheet.show(context, track),
+                        onLongPress: () => TrackActionsSheet.show(context, track),
                       );
                     },
                   );
@@ -587,17 +513,13 @@ class _CoverThumbnail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (needsReview) {
-      return const CircleAvatar(
-          child: Icon(Icons.warning_amber_outlined, color: Colors.amber));
+      return const CircleAvatar(child: Icon(Icons.warning_amber_outlined, color: Colors.amber));
     }
     if (path.isEmpty) {
       return const CircleAvatar(child: Icon(Icons.music_note_outlined));
     }
 
-    final ImageProvider image = path.startsWith('http')
-        ? NetworkImage(path)
-        : FileImage(File(path)) as ImageProvider;
-    return CircleAvatar(
-        backgroundImage: image, onBackgroundImageError: (_, __) {});
+    final ImageProvider image = path.startsWith('http') ? NetworkImage(path) : FileImage(File(path)) as ImageProvider;
+    return CircleAvatar(backgroundImage: image, onBackgroundImageError: (_, __) {});
   }
 }

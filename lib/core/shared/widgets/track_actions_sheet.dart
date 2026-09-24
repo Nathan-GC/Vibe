@@ -20,9 +20,11 @@ class TrackActionsSheet extends ConsumerWidget {
   const TrackActionsSheet({super.key, required this.track, this.currentPlaylistId, this.onChanged});
 
   final Track track;
+
   /// Playlist depuis laquelle ce morceau est affiché — active l'action
   /// "Retirer de cette playlist" quand renseignée (éditeur de playlist).
   final String? currentPlaylistId;
+
   /// Appelé une fois qu'une action a réellement terminé sa modification en
   /// base — pas au moment où cette feuille se ferme, qui la précède souvent
   /// (ex. "Modifier les métadonnées" ferme la feuille puis ouvre un dialogue

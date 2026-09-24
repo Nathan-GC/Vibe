@@ -41,7 +41,8 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
   Future<void> _saveCredentials() async {
     if (_clientIdController.text.trim().isEmpty || _clientSecretController.text.trim().isEmpty) return;
     await ref.read(spotifyCredentialsStorageProvider).save(
-          SpotifyCredentials(clientId: _clientIdController.text.trim(), clientSecret: _clientSecretController.text.trim()),
+          SpotifyCredentials(
+              clientId: _clientIdController.text.trim(), clientSecret: _clientSecretController.text.trim()),
         );
     ref.invalidate(spotifyCredentialsProvider);
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Identifiants enregistrés')));

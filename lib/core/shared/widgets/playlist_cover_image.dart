@@ -34,7 +34,8 @@ class PlaylistCoverImage extends StatelessWidget {
         child: Image.file(
           File(playlist.coverImagePath),
           fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) => _CompositeFallback(playlist: playlist, borderRadius: borderRadius),
+          errorBuilder: (context, error, stackTrace) =>
+              _CompositeFallback(playlist: playlist, borderRadius: borderRadius),
         ),
       );
     }
@@ -59,9 +60,7 @@ class _CompositeFallback extends ConsumerWidget {
 
     return ClipRRect(
       borderRadius: borderRadius,
-      child: covers.isEmpty
-          ? _VibePlaceholder(vibe: playlist.resolvedVibe)
-          : _CompositeGrid(coverPaths: covers),
+      child: covers.isEmpty ? _VibePlaceholder(vibe: playlist.resolvedVibe) : _CompositeGrid(coverPaths: covers),
     );
   }
 }
@@ -83,7 +82,8 @@ class _CompositeGrid extends StatelessWidget {
           return ColoredBox(color: Theme.of(context).colorScheme.surfaceContainerHighest);
         }
         final String path = coverPaths[index];
-        final ImageProvider image = path.startsWith('http') ? NetworkImage(path) : FileImage(File(path)) as ImageProvider;
+        final ImageProvider image =
+            path.startsWith('http') ? NetworkImage(path) : FileImage(File(path)) as ImageProvider;
         return Image(
           image: image,
           fit: BoxFit.cover,

@@ -51,7 +51,10 @@ extension VibePresetStyle on VibePreset {
         // contrôles (accentColor blanc) illisibles quel que soit le fond
         // sous-jacent — bug réel repéré en testant la vibe en conditions
         // réelles sur le lecteur.
-        VibePreset.glassmorphism => [Colors.indigo.shade200.withValues(alpha: 0.65), Colors.indigo.shade400.withValues(alpha: 0.45)],
+        VibePreset.glassmorphism => [
+            Colors.indigo.shade200.withValues(alpha: 0.65),
+            Colors.indigo.shade400.withValues(alpha: 0.45)
+          ],
         // Synthwave 80s (Feuille de route Vibe v2) : violet nuit profond en
         // haut vers magenta intense — le shader (styleIndex 1) peint
         // lui-même un dégradé vertical marqué + soleil strié + grille par-

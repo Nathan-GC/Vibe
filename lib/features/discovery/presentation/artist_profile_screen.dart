@@ -66,7 +66,8 @@ class _ArtistProfileScreenState extends ConsumerState<ArtistProfileScreen> {
           _SortDropdown(selected: _sort, onChanged: (s) => setState(() => _sort = s)),
           const SizedBox(height: 16),
           tracks.when(
-            data: (data) => _filter == ArtistFilter.albums ? _AlbumSections(tracks: data) : _FlatTrackList(tracks: data),
+            data: (data) =>
+                _filter == ArtistFilter.albums ? _AlbumSections(tracks: data) : _FlatTrackList(tracks: data),
             loading: () => Column(children: List.generate(6, (_) => const SkeletonLoader())),
             error: (error, _) => Text('Erreur de chargement : $error'),
           ),
@@ -152,7 +153,8 @@ class _TopTracksSection extends ConsumerWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Morceaux populaires', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: vibe.accentColor)),
+            Text('Morceaux populaires',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(color: vibe.accentColor)),
             const SizedBox(height: 8),
             ...data.map(
               (track) => OnlineTrackCard(track: track, onAdd: () => addOnlineTrackToPlaylist(context, ref, track)),
@@ -247,7 +249,8 @@ class _AlbumTile extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 6),
-            Text(album.album, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodyMedium),
+            Text(album.album,
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodyMedium),
             Text(
               [if (album.releaseYear > 0) '${album.releaseYear}', if (album.label != null) album.label!].join(' · '),
               maxLines: 1,
@@ -295,9 +298,7 @@ class _SortDropdown extends StatelessWidget {
         const Text('Trier par : '),
         DropdownButton<ArtistSort>(
           value: selected,
-          items: ArtistSort.values
-              .map((sort) => DropdownMenuItem(value: sort, child: Text(sort.label)))
-              .toList(),
+          items: ArtistSort.values.map((sort) => DropdownMenuItem(value: sort, child: Text(sort.label))).toList(),
           onChanged: (value) {
             if (value != null) onChanged(value);
           },
@@ -374,7 +375,8 @@ class _TrackTile extends StatelessWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (isCollaboration) const Padding(padding: EdgeInsets.only(right: 4), child: Icon(Icons.people_outline, size: 18)),
+          if (isCollaboration)
+            const Padding(padding: EdgeInsets.only(right: 4), child: Icon(Icons.people_outline, size: 18)),
           IconButton(
             icon: const Icon(Icons.add_circle_outline),
             tooltip: 'Ajouter à une playlist',

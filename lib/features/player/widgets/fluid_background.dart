@@ -247,7 +247,8 @@ class _FluidBackgroundState extends State<FluidBackground> with SingleTickerProv
     // Space (`oled`) reste la seule exception, sa nébuleuse étant justement
     // construite à partir de cette palette (voir _paintNebula ci-dessous).
     final bool ignoresCoverPalette = widget.vibe.preset?.ignoresCoverPalette ?? false;
-    final List<Color> colors = ignoresCoverPalette ? widget.vibe.gradientColors : (_paletteColors ?? widget.vibe.gradientColors);
+    final List<Color> colors =
+        ignoresCoverPalette ? widget.vibe.gradientColors : (_paletteColors ?? widget.vibe.gradientColors);
     final int? particleStyle = widget.vibe.preset?.particleStyleIndex;
     final bool isSpaceNebula = widget.vibe.preset == VibePreset.oled;
 
@@ -322,6 +323,24 @@ class _FluidBackgroundState extends State<FluidBackground> with SingleTickerProv
     );
   }
 }
+
+/// Palette de repli de la nébuleuse Space sans pochette (charte : indigo
+/// `#2B0054` -> violet `#1A0033`, vers le noir).
+const List<Color> _kNebulaFallbackColors = [Color(0xFF2B0054), Color(0xFF1A0033)];
+
+/// Gain de luminosité appliqué à cette palette de repli (retour QA v1.0.0) :
+/// telle quelle, elle restait trop discrète sur OLED. Les teintes de la charte
+/// sont conservées, seule leur intensité monte. Aucun effet sur le noir pur
+/// des bords : le shader force `#000000` au-delà de l'ellipse quelle que soit
+/// la couleur (voir space_nebula.frag).
+const double _kNebulaFallbackGain = 1.4;
+
+Color _brighten(Color color, double gain) => Color.from(
+      alpha: color.a,
+      red: (color.r * gain).clamp(0.0, 1.0),
+      green: (color.g * gain).clamp(0.0, 1.0),
+      blue: (color.b * gain).clamp(0.0, 1.0),
+    );
 
 class _FluidPainter extends CustomPainter {
   _FluidPainter({
@@ -509,7 +528,7 @@ class _FluidPainter extends CustomPainter {
 
     final List<Color> glowColors = (hasCoverPalette && colors.length >= 2)
         ? colors
-        : const [Color(0xFF2B0054), Color(0xFF1A0033)];
+        : [for (final Color color in _kNebulaFallbackColors) _brighten(color, _kNebulaFallbackGain)];
 
     final ui.FragmentShader? shader = nebulaShader;
     if (shader != null) {

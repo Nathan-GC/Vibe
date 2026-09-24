@@ -29,9 +29,8 @@ class PlaylistTrackRepository {
     if (trackIds.isEmpty) return 0;
 
     return _db.transaction(() async {
-      final List<PlaylistTrack> existing = await (_db.select(_db.playlistTracks)
-            ..where((t) => t.playlistId.equals(playlistId)))
-          .get();
+      final List<PlaylistTrack> existing =
+          await (_db.select(_db.playlistTracks)..where((t) => t.playlistId.equals(playlistId))).get();
       final Set<String> alreadyPresent = existing.map((t) => t.trackId).toSet();
       final List<String> toAdd = trackIds.where((id) => !alreadyPresent.contains(id)).toList();
       if (toAdd.isEmpty) return 0;
@@ -49,8 +48,7 @@ class PlaylistTrackRepository {
 
   /// Retrait instantané (bouton "J'aime", Étape 3).
   Future<void> removeTrack(String playlistId, String trackId) {
-    return (_db.delete(_db.playlistTracks)
-          ..where((t) => t.playlistId.equals(playlistId) & t.trackId.equals(trackId)))
+    return (_db.delete(_db.playlistTracks)..where((t) => t.playlistId.equals(playlistId) & t.trackId.equals(trackId)))
         .go();
   }
 

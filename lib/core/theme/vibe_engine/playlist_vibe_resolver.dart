@@ -36,8 +36,7 @@ extension PlaylistVibeResolver on Playlist {
       // Repli pour les Vibes personnalisées créées avant l'ajout du choix
       // explicite d'accent : la dernière couleur du dégradé restait alors la
       // meilleure approximation disponible.
-      accentColor: explicitAccent ??
-          (customColors.isEmpty ? VibePreset.custom.accentColor : customColors.last),
+      accentColor: explicitAccent ?? (customColors.isEmpty ? VibePreset.custom.accentColor : customColors.last),
       backgroundImagePath: customBackgroundImagePath.isEmpty ? null : customBackgroundImagePath,
       preset: VibePreset.custom,
       effect: customEffect,

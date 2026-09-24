@@ -12,7 +12,8 @@ import 'track_repository.dart';
 /// (remixes, bootlegs, sets DJ) qu'iTunes ne référence pas — le meilleur
 /// résultat de recherche est retenu directement.
 class YoutubeAutoEnricher implements TrackEnricher {
-  YoutubeAutoEnricher({required YoutubeEnricherService youtubeEnricherService, required TrackRepository trackRepository})
+  YoutubeAutoEnricher(
+      {required YoutubeEnricherService youtubeEnricherService, required TrackRepository trackRepository})
       : _youtubeEnricherService = youtubeEnricherService,
         _trackRepository = trackRepository;
 

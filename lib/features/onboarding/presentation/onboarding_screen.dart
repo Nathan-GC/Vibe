@@ -34,12 +34,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final OnboardingScanState state =
-        ref.watch(onboardingScanControllerProvider);
+    final OnboardingScanState state = ref.watch(onboardingScanControllerProvider);
     final double? progressValue = state.isEnriching
-        ? (state.enrichmentTotal > 0
-            ? state.enrichmentProcessed / state.enrichmentTotal
-            : null)
+        ? (state.enrichmentTotal > 0 ? state.enrichmentProcessed / state.enrichmentTotal : null)
         : (state.total > 0 ? state.processed / state.total : null);
 
     return Scaffold(
@@ -51,15 +48,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             children: [
               const Icon(Icons.library_music_outlined, size: 64),
               const SizedBox(height: 24),
-              Text('Bienvenue',
-                  style: Theme.of(context).textTheme.headlineSmall),
+              Text('Bienvenue', style: Theme.of(context).textTheme.headlineSmall),
               const SizedBox(height: 8),
               Text(
                 state.permissionDenied
                     ? 'Permission audio refusée — tu pourras importer tes morceaux manuellement depuis Découverte.'
-                    : (state.isEnriching
-                        ? 'Enrichissement des morceaux renommés...'
-                        : _statusLabel(state)),
+                    : (state.isEnriching ? 'Enrichissement des morceaux renommés...' : _statusLabel(state)),
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium,
               ),

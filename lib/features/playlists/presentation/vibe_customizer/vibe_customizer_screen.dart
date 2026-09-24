@@ -38,8 +38,7 @@ class VibeCustomizerScreen extends ConsumerWidget {
                 // Section 3 : pochette masquable pour New OLED/Neon/Retro
                 // (Custom a son propre bloc, voir _CustomVibeEditor) — n'a de
                 // sens que pour le preset réellement actif de la playlist.
-                final bool showCoverToggle =
-                    isSelected && preset.exposesCoverToggle;
+                final bool showCoverToggle = isSelected && preset.exposesCoverToggle;
                 // QA Section 2.D : `preset.accentColor` seul devenait invisible
                 // pour Space/New OLED (blanc pur) sur une carte à fond clair —
                 // bordure de sélection alors indiscernable. Repli sur la
@@ -337,7 +336,8 @@ class _CustomVibeEditorState extends ConsumerState<_CustomVibeEditor> {
                       ),
                     ),
                     child: selected
-                        ? Icon(Icons.check, size: 16, color: color.computeLuminance() > 0.5 ? Colors.black : Colors.white)
+                        ? Icon(Icons.check,
+                            size: 16, color: color.computeLuminance() > 0.5 ? Colors.black : Colors.white)
                         : null,
                   ),
                 );
@@ -367,7 +367,8 @@ class _CustomVibeEditorState extends ConsumerState<_CustomVibeEditor> {
                       ),
                     ),
                     child: selected
-                        ? Icon(Icons.check, size: 16, color: color.computeLuminance() > 0.5 ? Colors.black : Colors.white)
+                        ? Icon(Icons.check,
+                            size: 16, color: color.computeLuminance() > 0.5 ? Colors.black : Colors.white)
                         : null,
                   ),
                 );

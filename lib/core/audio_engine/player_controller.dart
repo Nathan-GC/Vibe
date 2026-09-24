@@ -342,7 +342,8 @@ class PlayerController extends _$PlayerController {
     // playlist active après un force-stop/relance et retombaient
     // indéfiniment sur leur repli neutre (dégradé gris, accentColor black87)
     // au lieu de la Vibe réellement configurée.
-    state = PlayerSnapshot(status: PlaybackStatus.paused, currentTrack: track, currentPlaylistId: persisted.currentPlaylistId);
+    state = PlayerSnapshot(
+        status: PlaybackStatus.paused, currentTrack: track, currentPlaylistId: persisted.currentPlaylistId);
   }
 }
 

@@ -136,7 +136,8 @@ class _AddByArtistSheetState extends ConsumerState<AddByArtistSheet> {
                   },
                 );
               },
-              loading: () => const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())),
+              loading: () =>
+                  const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())),
               error: (error, _) => Padding(padding: const EdgeInsets.all(24), child: Text('Erreur : $error')),
             ),
           ),
