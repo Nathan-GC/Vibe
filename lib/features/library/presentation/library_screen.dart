@@ -6,13 +6,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/shared/widgets/enrichment_source_dialog.dart';
+import '../../../core/shared/widgets/library_category_picker.dart';
 import '../../../core/shared/widgets/track_actions_sheet.dart';
 import '../../../core/storage/database/app_database.dart';
 import '../../../core/storage/database/duplicate_track_group.dart';
+import '../../../core/storage/database/library_category.dart';
 import '../../../core/storage/database/track_enricher.dart';
 import '../../../core/storage/database/track_repository.dart';
+import '../../../core/storage/scanner/audio_import_pipeline.dart';
 import '../../../core/storage/scanner/scanned_track.dart';
-import '../../../core/storage/storage_manager/imported_audio_file.dart';
+import '../../../core/storage/storage_manager/picked_file_cache.dart';
+import '../data/library_enrichment_runner.dart';
 import '../data/library_providers.dart';
 import 'metadata_editor_modal.dart';
 
@@ -40,9 +44,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     });
 
     try {
-      final storageManager = ref.read(storageManagerServiceProvider);
-      final scanService = ref.read(libraryScanServiceProvider);
-      final repository = ref.read(trackRepositoryProvider);
+      final AudioImportPipeline pipeline = AudioImportPipeline(
+        storageManager: ref.read(storageManagerServiceProvider),
+        scanService: ref.read(libraryScanServiceProvider),
+        trackRepository: ref.read(trackRepositoryProvider),
+      );
 
       int imported = 0;
       int tooShort = 0;
@@ -58,10 +64,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         final String? path = picked[i].path;
         if (path != null) {
           try {
-            final ImportedAudioFile copied = await storageManager.importAudioFile(File(path));
-            final ScannedTrack? track = await scanService.processImportedFile(copied);
+            // Copie privée supprimée d'office si le fichier est refusé
+            // (< 30 s) ou échoue, voir AudioImportPipeline.
+            final ScannedTrack? track = await pipeline.importFile(File(path));
             if (track != null) {
-              await repository.upsertTrack(track);
               imported++;
               if (track.wasRenamedFromFilename) renamedTracks.add(track);
             } else {
@@ -120,6 +126,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Import impossible : $error')));
       }
     } finally {
+      // Copies intermédiaires du sélecteur de fichiers (cache Android) :
+      // inutiles une fois les fichiers copiés dans le dossier de l'app.
+      await clearPickedFileCache();
       if (mounted) {
         setState(() {
           _busy = false;
@@ -159,23 +168,33 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     );
   }
 
-  /// Cherche la meilleure correspondance pour [track] via [enricher] (iTunes
-  /// ou YouTube, voir [_pickEnrichmentSource]) et enrichit pochette HD /
-  /// genre / époque en base. Non destructif (voir
-  /// TrackRepository.enrichFromOnlineMetadata) : sûr à relancer.
-  Future<bool> _enrichTrack(Track track, TrackEnricher enricher) {
-    return enricher.enrichTrack(trackId: track.id, title: track.title, artists: track.artists);
-  }
-
   /// Enrichissement individuel (bouton rapide sur un morceau) — toujours
   /// iTunes : pas de sélection de source pour ce cas précis (voir Section
   /// 2.1, réservée à "Enrichir tout"/post-import), le choix par morceau se
   /// fait plutôt dans MetadataEditorModal (Section 2.3).
+  ///
+  /// Morceau "À renommer" (recette QA, choix 2-A) : son Titre/Artiste sont
+  /// trop ambigus pour une recherche automatique (circuit-breaker
+  /// `requiresReview`, qui répondait aussitôt "Aucune correspondance
+  /// trouvée") — ouvre plutôt la recherche manuelle iTunes/YouTube de
+  /// l'éditeur, pré-remplie avec le nom du fichier audio.
   Future<void> _enrichSingle(Track track) async {
+    if (libraryCategoryOf(track) == LibraryCategory.toRename) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => MetadataEditorModal(
+          track: track,
+          initialSearchQuery: searchQueryFromFilePath(track.filePath, fallbackTitle: track.title),
+        ),
+      );
+      return;
+    }
+
     final TrackEnricher enricher = ref.read(trackAutoEnricherProvider);
     bool found = false;
     for (int attempt = 1; attempt <= _maxEnrichmentPasses && !found; attempt++) {
-      found = await _enrichTrack(track, enricher);
+      // Non destructif (voir TrackRepository.enrichFromOnlineMetadata) : sûr à relancer.
+      found = await enricher.enrichTrack(trackId: track.id, title: track.title, artists: track.artists);
     }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -183,22 +202,19 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     );
   }
 
-  /// Enrichit tous les morceaux sans pochette ni mots-clés — l'espacement des
-  /// requêtes iTunes est géré côté [MetadataApiClient] (throttle + reprise
-  /// sur blocage de débit), pas ici.
-  ///
-  /// Boucle de nouvelles tentatives (Feuille de route pt.4) : une passe seule
-  /// laissait parfois des morceaux non enrichis (timeout ponctuel, requête
-  /// trop proche de la précédente...) sans que l'utilisateur ait de moyen de
-  /// les retenter autrement qu'en rappelant "Enrichir tout" manuellement —
-  /// jusqu'à 3 passes successives, chacune ne retraitant que ce qui manque
-  /// encore, et on s'arrête dès qu'une passe n'enrichit plus rien de nouveau.
+  /// Passes d'"Enrichir tout" ([LibraryEnrichmentRunner]) et tentatives du
+  /// bouton ✨ individuel ([_enrichSingle]).
   static const int _maxEnrichmentPasses = 3;
 
+  /// Enrichit tous les morceaux de la catégorie "À enrichir" (hors échecs
+  /// auto déjà épuisés, voir [trackNeedsEnrichment]) — boucle de passes et
+  /// synchronisation avec la base dans [LibraryEnrichmentRunner].
+  /// L'espacement des requêtes iTunes est géré côté [MetadataApiClient]
+  /// (throttle + reprise sur blocage de débit), pas ici.
   Future<void> _enrichLibrary() async {
-    List<Track> all = await ref.read(libraryTracksProvider.future);
-    List<Track> targets = all.where(trackNeedsEnrichment).toList();
-    if (targets.isEmpty) {
+    final TrackRepository repository = ref.read(trackRepositoryProvider);
+    final bool nothingToDo = (await repository.fetchAllTracks()).where(trackNeedsEnrichment).isEmpty;
+    if (nothingToDo) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Rien à enrichir.')));
       }
@@ -207,37 +223,25 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
     final EnrichmentSource? source = await _pickEnrichmentSource();
     if (source == null || !mounted) return;
-    final TrackEnricher enricher = _enricherFor(source);
+    final LibraryEnrichmentRunner runner = LibraryEnrichmentRunner(
+      repository: repository,
+      enricher: _enricherFor(source),
+      maxPasses: _maxEnrichmentPasses,
+    );
 
     setState(() => _busy = true);
 
-    int totalEnriched = 0;
-    final int totalTargets = targets.length;
-
-    for (int pass = 1; pass <= _maxEnrichmentPasses && targets.isNotEmpty; pass++) {
-      int enrichedThisPass = 0;
-      for (int i = 0; i < targets.length; i++) {
+    final LibraryEnrichmentResult result = await runner.run(
+      onProgress: (pass, index, passSize) {
         if (mounted) {
-          setState(() =>
-              _statusMessage = 'Enrichissement (passe $pass/$_maxEnrichmentPasses) ${i + 1} / ${targets.length}...');
+          setState(() => _statusMessage = 'Enrichissement (passe $pass/${runner.maxPasses}) $index / $passSize...');
         }
-        if (await _enrichTrack(targets[i], enricher)) {
-          enrichedThisPass++;
-          totalEnriched++;
-        }
-      }
-
-      if (enrichedThisPass == 0) {
-        break; // aucun progrès cette passe : inutile de retenter.
-      }
-
-      all = await ref.read(libraryTracksProvider.future);
-      targets = all.where(trackNeedsEnrichment).toList();
-    }
+      },
+    );
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$totalEnriched / $totalTargets morceau(x) enrichi(s)')),
+      SnackBar(content: Text('${result.enriched} / ${result.targets} morceau(x) enrichi(s)')),
     );
     setState(() {
       _busy = false;
@@ -273,44 +277,34 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   @override
   Widget build(BuildContext context) {
     final AsyncValue<List<Track>> allTracks = ref.watch(libraryTracksProvider);
-    final AsyncValue<List<Track>> needsReviewTracks = ref.watch(needsReviewTracksProvider);
-    final List<Track> needsEnrichmentTracks = ref.watch(tracksNeedingEnrichmentProvider);
     final List<DuplicateTrackGroup> duplicateGroups = ref.watch(duplicateTrackGroupsProvider).value ?? const [];
-    final bool reviewFilterActive = ref.watch(libraryReviewFilterProvider);
-    final bool enrichmentFilterActive = ref.watch(libraryEnrichmentFilterProvider);
-    final Set<EnrichmentProvenanceFilter> provenanceFilters = ref.watch(libraryProvenanceFilterProvider);
+    final LibraryFilterState filter = ref.watch(libraryFilterProvider);
     final LibrarySort sort = ref.watch(librarySortProvider);
-    final int needsReviewCount = needsReviewTracks.maybeWhen(data: (data) => data.length, orElse: () => 0);
-    final int needsEnrichmentCount = needsEnrichmentTracks.length;
     final List<Track> allTracksData = allTracks.value ?? const [];
-    final bool provenanceFilterActive = provenanceFilters.isNotEmpty;
 
-    final AsyncValue<List<Track>> tracks = reviewFilterActive
-        ? needsReviewTracks
-        : enrichmentFilterActive
-            ? AsyncValue.data(needsEnrichmentTracks)
-            : provenanceFilterActive
-                ? AsyncValue.data(filterTracksByProvenance(allTracksData, provenanceFilters))
-                : allTracks;
+    final Map<LibraryCategory, int> categoryCounts = {for (final category in LibraryCategory.values) category: 0};
+    final Map<EnrichmentStatus, int> statusCounts = {};
+    for (final track in allTracksData) {
+      categoryCounts.update(libraryCategoryOf(track), (count) => count + 1);
+      statusCounts.update(track.enrichmentStatus, (count) => count + 1, ifAbsent: () => 1);
+    }
+    // Sous-catégories de la catégorie sélectionnée qui ont au moins un
+    // morceau — une puce à (0) n'apporterait rien.
+    final List<EnrichmentProvenanceFilter> visibleProvenances = [
+      for (final provenance in EnrichmentProvenanceFilter.values)
+        if (provenance.category == filter.category && (statusCounts[provenance.matchingStatus] ?? 0) > 0) provenance,
+    ];
 
-    // Ergonomie navigation Android (2.B) : un filtre actif est un état de la
-    // page, pas une vraie route/modale — le bouton Retour doit d'abord
-    // l'effacer avant de vraiment quitter cette page.
-    final bool filterActive = reviewFilterActive || enrichmentFilterActive || provenanceFilterActive;
+    final AsyncValue<List<Track>> tracks = allTracks.whenData((data) => filterLibraryTracks(data, filter));
 
     return PopScope(
-      canPop: !filterActive,
+      // Ergonomie navigation Android (2.B) : un filtre actif est un état de
+      // la page, pas une vraie route/modale — le bouton Retour doit d'abord
+      // l'effacer avant de vraiment quitter cette page.
+      canPop: !filter.isActive,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
-        if (reviewFilterActive) {
-          ref.read(libraryReviewFilterProvider.notifier).toggle();
-        }
-        if (enrichmentFilterActive) {
-          ref.read(libraryEnrichmentFilterProvider.notifier).toggle();
-        }
-        if (provenanceFilterActive) {
-          ref.read(libraryProvenanceFilterProvider.notifier).clear();
-        }
+        ref.read(libraryFilterProvider.notifier).clear();
       },
       child: Scaffold(
         appBar: AppBar(
@@ -326,7 +320,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             ),
             IconButton(
               icon: const Icon(Icons.auto_awesome_outlined),
-              tooltip: 'Enrichir les pochettes et genres manquants',
+              tooltip: 'Enrichir les titres « À enrichir »',
               onPressed: _busy ? null : _enrichLibrary,
             ),
           ],
@@ -369,27 +363,25 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   ],
                 ),
               ),
-            if (needsReviewCount > 0 || needsEnrichmentCount > 0 || duplicateGroups.isNotEmpty)
+            if (allTracksData.isNotEmpty || duplicateGroups.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Wrap(
                     spacing: 8,
+                    runSpacing: 4,
                     children: [
-                      if (needsReviewCount > 0)
+                      // Les 3 catégories principales, mutuellement
+                      // exclusives (voir libraryCategoryOf) — toujours
+                      // affichées, même à (0), pour que la structure de la
+                      // bibliothèque reste lisible d'un coup d'œil.
+                      for (final category in LibraryCategory.values)
                         FilterChip(
-                          label: Text('À vérifier ($needsReviewCount)'),
-                          avatar: const Icon(Icons.warning_amber_outlined, size: 18, color: Colors.amber),
-                          selected: reviewFilterActive,
-                          onSelected: (_) => ref.read(libraryReviewFilterProvider.notifier).toggle(),
-                        ),
-                      if (needsEnrichmentCount > 0)
-                        FilterChip(
-                          label: Text('À enrichir ($needsEnrichmentCount)'),
-                          avatar: const Icon(Icons.auto_awesome_outlined, size: 18),
-                          selected: enrichmentFilterActive,
-                          onSelected: (_) => ref.read(libraryEnrichmentFilterProvider.notifier).toggle(),
+                          label: Text('${category.label} (${categoryCounts[category]})'),
+                          avatar: Icon(category.icon, size: 18, color: category.iconColor),
+                          selected: filter.category == category,
+                          onSelected: (_) => ref.read(libraryFilterProvider.notifier).toggleCategory(category),
                         ),
                       // Alerte doublons stricts (Titre + Artiste identiques) —
                       // navigue vers un écran dédié plutôt qu'un filtre en
@@ -405,33 +397,25 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   ),
                 ),
               ),
-            // Filtrage multi-provenance (Section 1) — distinct de la puce "À
-            // enrichir" ci-dessus (heuristique pochette/mots-clés manquants) :
-            // ceux-ci renseignent QUI/COMMENT un morceau a été enrichi.
-            // Masqué tant qu'aucun morceau n'a de statut pertinent, pour ne
-            // pas encombrer une bibliothèque tout juste importée.
-            if (allTracksData.any((t) =>
-                t.enrichmentStatus != EnrichmentStatus.pending &&
-                t.enrichmentStatus != EnrichmentStatus.requiresReview))
+            // Sous-catégories de provenance (QUI/COMMENT un morceau a été
+            // enrichi), affichées seulement sous la catégorie sélectionnée
+            // qui les contient — plusieurs cumulables (OU logique).
+            if (visibleProvenances.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding: const EdgeInsets.fromLTRB(28, 0, 12, 4),
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Wrap(
                     spacing: 8,
                     runSpacing: 4,
                     children: [
-                      for (final filter in EnrichmentProvenanceFilter.values)
-                        Builder(builder: (context) {
-                          final int count =
-                              allTracksData.where((t) => filter.matchingStatuses.contains(t.enrichmentStatus)).length;
-                          if (count == 0) return const SizedBox.shrink();
-                          return FilterChip(
-                            label: Text('${filter.label} ($count)'),
-                            selected: provenanceFilters.contains(filter),
-                            onSelected: (_) => ref.read(libraryProvenanceFilterProvider.notifier).toggle(filter),
-                          );
-                        }),
+                      for (final provenance in visibleProvenances)
+                        FilterChip(
+                          label: Text('${provenance.label} (${statusCounts[provenance.matchingStatus]})'),
+                          visualDensity: VisualDensity.compact,
+                          selected: filter.provenances.contains(provenance),
+                          onSelected: (_) => ref.read(libraryFilterProvider.notifier).toggleProvenance(provenance),
+                        ),
                     ],
                   ),
                 ),
@@ -441,7 +425,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               child: tracks.when(
                 data: (unsorted) {
                   if (unsorted.isEmpty) {
-                    return const Center(child: Text('Aucun morceau — importe des MP3.'));
+                    return Center(
+                      child:
+                          Text(filter.isActive ? 'Aucun morceau dans ce filtre.' : 'Aucun morceau — importe des MP3.'),
+                    );
                   }
                   final List<Track> data = sortLibraryTracks(unsorted, sort);
                   return ListView.builder(
@@ -483,10 +470,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                           ],
                         ),
                         // À tout moment, pas seulement pour les morceaux "À
-                        // vérifier" : un titre déjà enrichi doit pouvoir être
+                        // renommer" : un titre déjà enrichi doit pouvoir être
                         // ré-enrichi ou renommé sans repasser par le badge.
                         onTap: () => _openMetadataEditor(track),
-                        onLongPress: () => TrackActionsSheet.show(context, track),
+                        onLongPress: () => TrackActionsSheet.show(context, track, showChangeCategory: true),
                       );
                     },
                   );

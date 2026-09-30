@@ -35,14 +35,19 @@ class YoutubeAutoEnricher implements TrackEnricher {
       return false;
     }
 
+    // Correspondance valide = premier résultat avec une miniature exploitable.
     final String? thumbnailUrl = results.isNotEmpty ? results.first.coverArtUrl : null;
-    if (thumbnailUrl == null) {
+    if (thumbnailUrl == null || thumbnailUrl.isEmpty) {
       await _trackRepository.recordEnrichmentOutcome(trackId, success: false, source: EnrichmentSource.youtube);
       return false;
     }
 
-    final bool ok = await _trackRepository.enrichCoverArtFromYoutube(trackId, thumbnailUrl);
-    await _trackRepository.recordEnrichmentOutcome(trackId, success: ok, source: EnrichmentSource.youtube);
-    return ok;
+    // Succès même si le morceau avait déjà une pochette (conservée, voir
+    // TrackRepository.applyYoutubeMatch) — seul un morceau disparu entre-temps
+    // renvoie `false`, sans consommer de tentative.
+    final bool ok = await _trackRepository.applyYoutubeMatch(trackId, thumbnailUrl);
+    if (!ok) return false;
+    await _trackRepository.recordEnrichmentOutcome(trackId, success: true, source: EnrichmentSource.youtube);
+    return true;
   }
 }

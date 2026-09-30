@@ -14,8 +14,26 @@ import '../../../core/storage/database/track_repository.dart';
 import '../../../core/storage/filename_sanitizer/filename_sanitizer.dart';
 import '../data/library_providers.dart';
 
+/// Terme de recherche par défaut tiré du nom du fichier audio, pour un
+/// morceau "À renommer" (Titre/Artiste trop ambigus pour une recherche
+/// automatique). Un fichier importé est stocké sous `{artiste}-{titre}.mp3`
+/// (StorageManagerService.importAudioFile) : on retire le préfixe
+/// `Unknown-` d'un artiste non déduit et le suffixe ` (2)` d'anti-collision,
+/// et on remplace `_`/`-` par des espaces (texte libre pour iTunes/YouTube).
+/// Repli sur [fallbackTitle] (titre existant) si le nom n'apporte rien.
+String searchQueryFromFilePath(String filePath, {required String fallbackTitle}) {
+  final String query = p
+      .basenameWithoutExtension(filePath)
+      .replaceFirst(RegExp(r'\s\(\d+\)$'), '')
+      .replaceFirst(RegExp(r'^unknown-', caseSensitive: false), '')
+      .replaceAll(RegExp(r'[_-]+'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  return query.isEmpty ? fallbackTitle.trim() : query;
+}
+
 /// Éditeur manuel de métadonnées — accessible à tout moment sur n'importe
-/// quel morceau (badge "À vérifier" ou déjà enrichi, ré-enrichissement ou
+/// quel morceau ("À renommer" ou déjà enrichi, ré-enrichissement ou
 /// simple correction), pas seulement au premier import. Deux façons de
 /// renseigner les champs :
 ///   1. Recherche API : deux champs Artiste/Titre dédiés à la recherche
@@ -30,9 +48,15 @@ import '../data/library_providers.dart';
 /// Toujours persisté immédiatement dans Drift via `TrackRepository.
 /// updateMetadata` — jamais de brouillon local qui se perdrait.
 class MetadataEditorModal extends ConsumerStatefulWidget {
-  const MetadataEditorModal({super.key, required this.track});
+  const MetadataEditorModal({super.key, required this.track, this.initialSearchQuery});
 
   final Track track;
+
+  /// Terme de recherche imposé à l'ouverture (recherche lancée aussitôt), en
+  /// texte libre dans le champ Titre de recherche, champ Artiste vide — voir
+  /// [searchQueryFromFilePath] (bouton ✨ sur un morceau "À renommer").
+  /// `null` : pré-remplissage habituel depuis Artiste/Titre actuels.
+  final String? initialSearchQuery;
 
   @override
   ConsumerState<MetadataEditorModal> createState() => _MetadataEditorModalState();
@@ -83,11 +107,14 @@ class _MetadataEditorModalState extends ConsumerState<MetadataEditorModal> {
 
     // Pré-remplissage : privilégie l'Artiste/Titre déjà connus (déjà tagués
     // ou en cours de ré-enrichissement) — le repli sur le nom de fichier
-    // nettoyé ne sert plus qu'aux morceaux réellement ambigus ("À vérifier",
+    // nettoyé ne sert plus qu'aux morceaux réellement ambigus ("À renommer",
     // artiste/titre encore vides à ce stade).
     String initialSearchArtist = _artistController.text.trim();
     String initialSearchTitle = _titleController.text.trim();
-    if (initialSearchArtist.isEmpty && initialSearchTitle.isEmpty) {
+    if (widget.initialSearchQuery != null) {
+      initialSearchArtist = '';
+      initialSearchTitle = widget.initialSearchQuery!;
+    } else if (initialSearchArtist.isEmpty && initialSearchTitle.isEmpty) {
       final SanitizedFilename cleaned = FilenameSanitizer().sanitizeFilename(p.basename(widget.track.filePath));
       initialSearchArtist = cleaned.artist == 'Unknown' ? '' : cleaned.artist;
       initialSearchTitle = cleaned.title;

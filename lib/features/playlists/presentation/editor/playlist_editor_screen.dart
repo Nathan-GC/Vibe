@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../../core/identity/track_search.dart';
 import '../../../../core/shared/widgets/local_track_picker_sheet.dart';
 import '../../../../core/shared/widgets/playlist_cover_image.dart';
 import '../../../../core/shared/widgets/track_actions_sheet.dart';
 import '../../../../core/storage/database/app_database.dart';
+import '../../../../core/storage/database/track_repository.dart';
 import '../../../../core/theme/design_system/app_spacing.dart';
 import '../../../library/data/library_providers.dart';
 import '../../data/playlist_providers.dart';
@@ -30,6 +32,32 @@ class PlaylistEditorScreen extends ConsumerStatefulWidget {
 class _PlaylistEditorScreenState extends ConsumerState<PlaylistEditorScreen> {
   List<PlaylistEditorEntry>? _localOrder;
   bool _saving = false;
+
+  /// Barre de recherche (titre + artiste, sans casse ni accents — voir
+  /// [trackMatchesSearch]) réservée à "Tous les titres importés" : la seule
+  /// playlist qui grossit avec toute la bibliothèque.
+  bool get _searchEnabled => widget.playlistId == kAllImportedPlaylistId;
+  final TextEditingController _searchController = TextEditingController();
+  String _query = '';
+
+  bool get _isSearching => _query.trim().isNotEmpty;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    setState(() => _query = '');
+  }
+
+  bool _entryMatches(PlaylistEditorEntry entry) => trackMatchesSearch(
+        title: entry.title,
+        artists: entry.track?.artists ?? [entry.missing!.artist],
+        query: _query,
+      );
 
   void _reorder(int oldIndex, int newIndex) {
     setState(() {
@@ -197,6 +225,24 @@ class _PlaylistEditorScreenState extends ConsumerState<PlaylistEditorScreen> {
       body: Column(
         children: [
           if (playlist.value != null) _CoverHeader(playlist: playlist.value!, onPickImage: _pickCoverImage),
+          if (_searchEnabled)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(AppSpacing.m, 0, AppSpacing.m, AppSpacing.s),
+              child: TextField(
+                controller: _searchController,
+                textInputAction: TextInputAction.search,
+                decoration: InputDecoration(
+                  prefixIcon: const Icon(Icons.search),
+                  hintText: 'Rechercher un titre ou un artiste',
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(icon: const Icon(Icons.clear), tooltip: 'Effacer', onPressed: _clearSearch),
+                ),
+                onChanged: (value) => setState(() => _query = value),
+              ),
+            ),
           Expanded(
             child: entries.when(
               data: (data) {
@@ -210,6 +256,33 @@ class _PlaylistEditorScreenState extends ConsumerState<PlaylistEditorScreen> {
                         textAlign: TextAlign.center,
                       ),
                     ),
+                  );
+                }
+
+                // Recherche active : simple liste filtrée, sans glisser-
+                // déposer — réordonner un sous-ensemble filtré n'aurait pas
+                // de position cohérente dans la playlist complète.
+                if (_isSearching) {
+                  final List<PlaylistEditorEntry> results = list.where(_entryMatches).toList();
+                  if (results.isEmpty) {
+                    return const Center(child: Text('Aucun titre ne correspond à cette recherche.'));
+                  }
+                  return ListView.builder(
+                    keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                    itemCount: results.length,
+                    itemBuilder: (context, index) {
+                      final PlaylistEditorEntry entry = results[index];
+                      final Track? track = entry.track;
+                      return _EditorTile(
+                        key: ValueKey(entry.key),
+                        index: index,
+                        entry: entry,
+                        showDragHandle: false,
+                        onTap: track == null ? () => _openMissingActions(entry.missing!) : null,
+                        onLongPress:
+                            track != null ? () => _openTrackActions(track) : () => _openMissingActions(entry.missing!),
+                      );
+                    },
                   );
                 }
 
@@ -324,12 +397,23 @@ class _CoverHeader extends StatelessWidget {
 enum _MissingAction { link, remove }
 
 class _EditorTile extends StatelessWidget {
-  const _EditorTile({super.key, required this.index, required this.entry, required this.onLongPress, this.onTap});
+  const _EditorTile({
+    super.key,
+    required this.index,
+    required this.entry,
+    required this.onLongPress,
+    this.onTap,
+    this.showDragHandle = true,
+  });
 
   final int index;
   final PlaylistEditorEntry entry;
   final VoidCallback onLongPress;
   final VoidCallback? onTap;
+
+  /// `false` hors d'une `ReorderableListView` (résultats de recherche) :
+  /// [ReorderableDragStartListener] exige un ancêtre réordonnable.
+  final bool showDragHandle;
 
   @override
   Widget build(BuildContext context) {
@@ -353,7 +437,9 @@ class _EditorTile extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: TextStyle(color: dimmed, fontStyle: missing ? FontStyle.italic : null),
         ),
-        trailing: ReorderableDragStartListener(index: index, child: Icon(Icons.drag_handle, color: dimmed)),
+        trailing: showDragHandle
+            ? ReorderableDragStartListener(index: index, child: Icon(Icons.drag_handle, color: dimmed))
+            : null,
         onTap: onTap,
         onLongPress: onLongPress,
       ),

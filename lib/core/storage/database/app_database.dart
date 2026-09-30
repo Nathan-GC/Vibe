@@ -68,6 +68,10 @@ class VibeCustomEffectConverter extends TypeConverter<VibeCustomEffect, String> 
 ///    (`requiresUserReview`) pour même tenter une requête API — évite de
 ///    gaspiller des appels réseau sur un morceau qu'une confirmation humaine
 ///    va de toute façon changer.
+///
+/// Stocké en texte (nom de la valeur) : une valeur retirée doit être
+/// remappée par une migration (voir `from < 14`), sans quoi
+/// [EnrichmentStatusConverter.fromSql] la ferait retomber sur `pending`.
 enum EnrichmentStatus {
   pending,
   enrichedAutoItunes,
@@ -196,9 +200,9 @@ class Playlists extends Table {
   // quand renseignée (voir MasterPlayerScreen) : mutuellement exclusive avec
   // `customEffect`/`customBackgroundImagePath`, jamais superposée.
   TextColumn get customBackgroundVideoPath => text().withDefault(const Constant(''))();
-  // Pochette masquable dans le Player (Section 3, `VibePreset.custom`/
-  // `newOled`/`neon`/`retro` uniquement — voir VibeCustomizerScreen) : par
-  // défaut visible (`true`) pour tout le reste, jamais exposé ailleurs.
+  // Pochette masquable dans le Player ("Afficher la pochette", proposé sur
+  // toutes les Vibes depuis la v1.2 — voir VibeCustomizerScreen) : visible
+  // par défaut (`true`).
   BoolColumn get showCoverImage => boolean().withDefault(const Constant(true))();
 
   @override
@@ -252,7 +256,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 12;
+  int get schemaVersion => 14;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -317,6 +321,28 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 12) {
             await m.createTable(playlistMissingTracks);
+          }
+          if (from < 13) {
+            // "Cacher la cover" disponible sur toutes les Vibes (v1.2) :
+            // jusqu'ici `show_cover_image` était ignoré (pochette toujours
+            // affichée) pour les presets sans bouton. Une valeur `false`
+            // héritée d'un ancien passage sur Retro/Neon/New OLED y
+            // masquerait soudain la pochette à la mise à jour — remise à
+            // `true` pour conserver exactement le rendu que l'utilisateur
+            // voyait avant.
+            await customStatement(
+              "UPDATE playlists SET show_cover_image = 1 WHERE vibe_style IN ('minimal', 'glassmorphism', 'organic', 'oled')",
+            );
+          }
+          if (from < 14) {
+            // Recette QA v1.2 (choix 1-A) : un morceau placé à la main dans
+            // "Renommé et enrichi" relève désormais de la sous-catégorie
+            // "Enrichi totalement manuellement" (`enrichedManualEdit`) —
+            // l'ancien statut dédié `markedEnrichedManually` (build de
+            // recette 1.2.0+4) n'existe plus côté Dart.
+            await customStatement(
+              "UPDATE tracks SET enrichment_status = 'enrichedManualEdit' WHERE enrichment_status = 'markedEnrichedManually'",
+            );
           }
         },
       );

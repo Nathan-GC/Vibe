@@ -66,23 +66,64 @@ void main() {
     expect(track.artists, ['Some DJ']);
   });
 
-  test('does not overwrite an existing cover art', () async {
-    await insertTrack(id: 't1', title: 'Bootleg Mix', artists: ['Some DJ']);
-    await (db.update(db.tracks)..where((t) => t.id.equals('t1')))
-        .write(const TracksCompanion(coverArtPath: Value('local/existing.jpg')));
-    final enricher = YoutubeAutoEnricher(
-      youtubeEnricherService: _FakeYoutubeEnricherService(const [
-        OnlineTrackResult(
-            artist: 'Some Channel', title: 'Bootleg Mix', coverArtUrl: 'https://i.ytimg.com/vi/x/maxresdefault.jpg'),
-      ]),
-      trackRepository: repository,
-    );
+  group('track that already has a cover (bug recette QA v1.2)', () {
+    const OnlineTrackResult youtubeMatch = OnlineTrackResult(
+        artist: 'Some Channel', title: 'Bootleg Mix', coverArtUrl: 'https://i.ytimg.com/vi/x/maxresdefault.jpg');
 
-    final bool ok = await enricher.enrichTrack(trackId: 't1', title: 'Bootleg Mix', artists: ['Some DJ']);
+    Future<void> insertTrackWithCover(String coverArtPath) async {
+      await insertTrack(id: 't1', title: 'Bootleg Mix', artists: ['Some DJ']);
+      await (db.update(db.tracks)..where((t) => t.id.equals('t1')))
+          .write(TracksCompanion(coverArtPath: Value(coverArtPath)));
+    }
 
-    expect(ok, isFalse);
-    final track = await repository.findById('t1');
-    expect(track!.coverArtPath, 'local/existing.jpg');
+    test('reports success on a valid match and keeps the existing cover untouched', () async {
+      await insertTrackWithCover('local/existing.jpg');
+      final enricher = YoutubeAutoEnricher(
+        youtubeEnricherService: _FakeYoutubeEnricherService(const [youtubeMatch]),
+        trackRepository: repository,
+      );
+
+      final bool ok = await enricher.enrichTrack(trackId: 't1', title: 'Bootleg Mix', artists: ['Some DJ']);
+
+      expect(ok, isTrue, reason: 'une pochette déjà présente ne doit plus compter comme un échec');
+      final track = await repository.findById('t1');
+      expect(track!.coverArtPath, 'local/existing.jpg', reason: 'non destructif : jamais écrasée');
+      expect(track.enrichmentStatus, EnrichmentStatus.enrichedAutoYoutube);
+      expect(track.enrichmentAttempts, 0);
+    });
+
+    test('never falls into "Échec auto" however many times it is re-enriched', () async {
+      await insertTrackWithCover('https://is1-ssl.mzstatic.com/itunes-hd.jpg');
+      final enricher = YoutubeAutoEnricher(
+        youtubeEnricherService: _FakeYoutubeEnricherService(const [youtubeMatch]),
+        trackRepository: repository,
+      );
+
+      for (int i = 0; i <= TrackRepository.maxEnrichmentAttempts; i++) {
+        expect(await enricher.enrichTrack(trackId: 't1', title: 'Bootleg Mix', artists: ['Some DJ']), isTrue);
+      }
+
+      final track = await repository.findById('t1');
+      expect(track!.enrichmentStatus, EnrichmentStatus.enrichedAutoYoutube);
+      expect(track.enrichmentStatus, isNot(EnrichmentStatus.needsManualReview));
+      expect(track.coverArtPath, 'https://is1-ssl.mzstatic.com/itunes-hd.jpg');
+    });
+
+    test('still counts a failed attempt when YouTube returns no usable thumbnail', () async {
+      await insertTrackWithCover('local/existing.jpg');
+      final enricher = YoutubeAutoEnricher(
+        youtubeEnricherService:
+            _FakeYoutubeEnricherService(const [OnlineTrackResult(artist: 'Some Channel', title: 'Bootleg Mix')]),
+        trackRepository: repository,
+      );
+
+      final bool ok = await enricher.enrichTrack(trackId: 't1', title: 'Bootleg Mix', artists: ['Some DJ']);
+
+      expect(ok, isFalse);
+      final track = await repository.findById('t1');
+      expect(track!.enrichmentAttempts, 1);
+      expect(track.coverArtPath, 'local/existing.jpg');
+    });
   });
 
   test('marks needsManualReview after maxEnrichmentAttempts empty results, then skips the API', () async {

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/shared/widgets/local_track_picker_sheet.dart';
 import '../../../../core/storage/database/app_database.dart';
+import '../../../../core/storage/storage_manager/picked_file_cache.dart';
 import '../../../diff/data/diff_providers.dart';
 import '../../domain/import_match_plan.dart';
 
@@ -112,6 +113,9 @@ class _ImportMatchingScreenState extends ConsumerState<ImportMatchingScreen> {
       imported = await ref.read(missingTrackResolverProvider).importFromDevice(File(path));
     } catch (_) {
       imported = null;
+    } finally {
+      // Copie intermédiaire du sélecteur (cache Android), voir clearPickedFileCache.
+      await clearPickedFileCache();
     }
     if (!mounted) return;
     setState(() => _importingIndex = null);

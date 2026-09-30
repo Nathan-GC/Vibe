@@ -504,11 +504,17 @@ class _PlayerPageState extends ConsumerState<_PlayerPage> with SingleTickerProvi
     final Track? track = widget.player.currentTrack;
     final bool isPlaying = widget.player.status == PlaybackStatus.playing;
     final VibeVisual vibe = widget.vibe;
-    // Section 3 : pochette masquable (Custom/New OLED/Neon/Retro, voir
-    // VibeCustomizerScreen) — quand masquée, le reste du contenu se recentre
+    // Pochette masquable sur toutes les Vibes (voir VibeCustomizerScreen)
+    // — quand masquée, le reste du contenu se recentre
     // naturellement dans la Column (mainAxisAlignment.center ci-dessous) sans
     // laisser d'espace vide à sa place.
     final bool showCover = vibe.showCoverImage;
+    // Pochette masquée : l'appui long sur la pochette (entrée manuelle en
+    // Focus) n'a plus de cible — il se reporte alors sur tout l'arrière-plan
+    // du lecteur, hors zones interactives (voir `_LongPressShield` autour
+    // des contrôles). Pochette visible : seul l'appui long sur la pochette
+    // compte, comme avant.
+    final bool backgroundLongPressFocus = !showCover && !immersive;
     // New OLED (Section 3) : seul preset dont le Focus Mode garde Titre/
     // Artiste visibles, directement sous la pochette, au lieu de la légende
     // en bas d'écran (_ImmersiveCaption) des autres Vibes.
@@ -547,118 +553,132 @@ class _PlayerPageState extends ConsumerState<_PlayerPage> with SingleTickerProvi
         behavior: HitTestBehavior.translucent,
         child: Stack(
           children: [
-            Padding(
-              padding: const EdgeInsets.all(24),
-              // `ConstrainedBox(minHeight:)` + `SingleChildScrollView` plutôt
-              // qu'un simple Column centré : sur un écran bas (petit téléphone,
-              // barre de progression + actions ajoutées) le contenu peut
-              // dépasser la hauteur disponible — il scrolle alors au lieu de
-              // déborder, tout en restant centré quand il tient dans l'écran.
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  return SingleChildScrollView(
-                    physics: immersive ? const NeverScrollableScrollPhysics() : null,
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                      child: Column(
-                        // QA "Polish & Final UI Fixes" (retest) : toujours
-                        // `center`, même sans pochette — voir juste en dessous
-                        // pourquoi `spaceEvenly` (essayé précédemment) sautait.
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          if (showCover) ...[
-                            albumArt,
-                            const SizedBox(height: 24),
-                          ],
-                          // Titre/Artiste + Contrôles regroupés dans une SEULE
-                          // Column enfant plutôt que 2 enfants indépendants de
-                          // la Column externe : `spaceEvenly` traitait l'espace
-                          // ENTRE les deux comme un intervalle supplémentaire à
-                          // distribuer (en plus du SizedBox(height:16) déjà
-                          // présent avant ProgressSlider), donnant une
-                          // impression de contenu dispersé plutôt que centré
-                          // comme un groupe cohérent. Un `Spacer`/`Expanded`
-                          // classique n'est PAS utilisable ici : cette Column
-                          // vit dans un `SingleChildScrollView` (hauteur non
-                          // bornée, pour permettre le défilement sur petit
-                          // écran) — `Spacer` y lèverait une exception de
-                          // layout ("incoming height constraints are
-                          // unbounded"). `MainAxisAlignment.center` sur la
-                          // Column externe centre ce groupe unique
-                          // mathématiquement, sans ce risque.
-                          Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              // Titre/Artiste : masqués comme le reste en Focus
-                              // Mode standard, mais laissés visibles pour New
-                              // OLED (isNewOledFocus), sous la pochette.
-                              AnimatedOpacity(
-                                opacity: (immersive && !isNewOledFocus) ? 0 : 1,
-                                duration: _fadeDuration,
-                                curve: Curves.easeInOut,
-                                child: IgnorePointer(
-                                  ignoring: immersive && !isNewOledFocus,
-                                  child: Column(
-                                    children: [
-                                      // QA Section 2.B/2.C : teintés à
-                                      // `vibe.accentColor` (illisibles sur les
-                                      // Vibes sombres avec le style ambiant
-                                      // par défaut) et tronqués sur une ligne
-                                      // (comme QueueScreen/PersonalSpaceScreen)
-                                      // plutôt que de déborder sur un
-                                      // titre/artiste long.
-                                      Text(
-                                        track?.title ?? 'Aucune lecture',
-                                        style:
-                                            Theme.of(context).textTheme.titleLarge?.copyWith(color: vibe.accentColor),
-                                        textAlign: TextAlign.center,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        track?.artists.join(', ') ?? '',
-                                        style:
-                                            Theme.of(context).textTheme.bodyMedium?.copyWith(color: vibe.accentColor),
-                                        textAlign: TextAlign.center,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              // Barre de progression/contrôles/actions :
-                              // masqués en Focus Mode pour toutes les Vibes
-                              // sans exception, y compris New OLED.
-                              AnimatedOpacity(
-                                opacity: immersive ? 0 : 1,
-                                duration: _fadeDuration,
-                                curve: Curves.easeInOut,
-                                child: IgnorePointer(
-                                  ignoring: immersive,
-                                  child: Column(
-                                    children: [
-                                      const SizedBox(height: 16),
-                                      ProgressSlider(
-                                        fallbackDuration: track?.effectivePlaybackDuration ?? Duration.zero,
-                                        color: vibe.accentColor,
-                                      ),
-                                      const SizedBox(height: 8),
-                                      _PlaybackControls(vibe: vibe, isPlaying: isPlaying),
-                                      const SizedBox(height: 8),
-                                      if (track != null) _TrackActions(trackId: track.id, vibe: vibe),
-                                    ],
-                                  ),
-                                ),
-                              ),
+            // Ancêtre du défilement (et non frère sous-jacent dans le
+            // Stack) : le Scrollable est opaque au hit-test et masquerait un
+            // détecteur placé en dessous. Ici, il reçoit l'appui long partout
+            // dans la zone de contenu, marges comprises (`translucent`) ; un
+            // appui long immobile gagne l'arène face au glissement vertical.
+            // `onLongPress: null` quand la pochette est visible : aucun
+            // recognizer n'est alors créé, comportement historique intact.
+            GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onLongPress: backgroundLongPressFocus ? _enterImmersive : null,
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                // `ConstrainedBox(minHeight:)` + `SingleChildScrollView` plutôt
+                // qu'un simple Column centré : sur un écran bas (petit téléphone,
+                // barre de progression + actions ajoutées) le contenu peut
+                // dépasser la hauteur disponible — il scrolle alors au lieu de
+                // déborder, tout en restant centré quand il tient dans l'écran.
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    return SingleChildScrollView(
+                      physics: immersive ? const NeverScrollableScrollPhysics() : null,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                        child: Column(
+                          // QA "Polish & Final UI Fixes" (retest) : toujours
+                          // `center`, même sans pochette — voir juste en dessous
+                          // pourquoi `spaceEvenly` (essayé précédemment) sautait.
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if (showCover) ...[
+                              albumArt,
+                              const SizedBox(height: 24),
                             ],
-                          ),
-                        ],
+                            // Titre/Artiste + Contrôles regroupés dans une SEULE
+                            // Column enfant plutôt que 2 enfants indépendants de
+                            // la Column externe : `spaceEvenly` traitait l'espace
+                            // ENTRE les deux comme un intervalle supplémentaire à
+                            // distribuer (en plus du SizedBox(height:16) déjà
+                            // présent avant ProgressSlider), donnant une
+                            // impression de contenu dispersé plutôt que centré
+                            // comme un groupe cohérent. Un `Spacer`/`Expanded`
+                            // classique n'est PAS utilisable ici : cette Column
+                            // vit dans un `SingleChildScrollView` (hauteur non
+                            // bornée, pour permettre le défilement sur petit
+                            // écran) — `Spacer` y lèverait une exception de
+                            // layout ("incoming height constraints are
+                            // unbounded"). `MainAxisAlignment.center` sur la
+                            // Column externe centre ce groupe unique
+                            // mathématiquement, sans ce risque.
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // Titre/Artiste : masqués comme le reste en Focus
+                                // Mode standard, mais laissés visibles pour New
+                                // OLED (isNewOledFocus), sous la pochette.
+                                AnimatedOpacity(
+                                  opacity: (immersive && !isNewOledFocus) ? 0 : 1,
+                                  duration: _fadeDuration,
+                                  curve: Curves.easeInOut,
+                                  child: IgnorePointer(
+                                    ignoring: immersive && !isNewOledFocus,
+                                    child: Column(
+                                      children: [
+                                        // QA Section 2.B/2.C : teintés à
+                                        // `vibe.accentColor` (illisibles sur les
+                                        // Vibes sombres avec le style ambiant
+                                        // par défaut) et tronqués sur une ligne
+                                        // (comme QueueScreen/PersonalSpaceScreen)
+                                        // plutôt que de déborder sur un
+                                        // titre/artiste long.
+                                        Text(
+                                          track?.title ?? 'Aucune lecture',
+                                          style:
+                                              Theme.of(context).textTheme.titleLarge?.copyWith(color: vibe.accentColor),
+                                          textAlign: TextAlign.center,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          track?.artists.join(', ') ?? '',
+                                          style:
+                                              Theme.of(context).textTheme.bodyMedium?.copyWith(color: vibe.accentColor),
+                                          textAlign: TextAlign.center,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                // Barre de progression/contrôles/actions :
+                                // masqués en Focus Mode pour toutes les Vibes
+                                // sans exception, y compris New OLED.
+                                AnimatedOpacity(
+                                  opacity: immersive ? 0 : 1,
+                                  duration: _fadeDuration,
+                                  curve: Curves.easeInOut,
+                                  child: IgnorePointer(
+                                    ignoring: immersive,
+                                    child: _LongPressShield(
+                                      active: backgroundLongPressFocus,
+                                      child: Column(
+                                        children: [
+                                          const SizedBox(height: 16),
+                                          ProgressSlider(
+                                            fallbackDuration: track?.effectivePlaybackDuration ?? Duration.zero,
+                                            color: vibe.accentColor,
+                                          ),
+                                          const SizedBox(height: 8),
+                                          _PlaybackControls(vibe: vibe, isPlaying: isPlaying),
+                                          const SizedBox(height: 8),
+                                          if (track != null) _TrackActions(trackId: track.id, vibe: vibe),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
             ),
             Positioned(
@@ -720,6 +740,29 @@ class _PlayerPageState extends ConsumerState<_PlayerPage> with SingleTickerProvi
     // MasterPlayerScreen (Section 4.1), pas ici : cette page ne fait plus que
     // son propre contenu, affiché par-dessus le fond partagé avec la Queue.
     return content;
+  }
+}
+
+/// Zone interactive (barre de progression, contrôles, actions) exclue de
+/// l'appui long d'arrière-plan qui déclenche le Focus quand la pochette est
+/// masquée. Un appui long sans action sur toute la zone : dans l'arène de
+/// gestes, son recognizer (plus profond dans l'arbre, donc enregistré — et
+/// son délai lancé — avant celui de l'arrière-plan) gagne le premier et
+/// élimine celui de l'arrière-plan. Un appui long propre à un contrôle
+/// (info-bulle d'un IconButton), encore plus profond, reste prioritaire.
+class _LongPressShield extends StatelessWidget {
+  const _LongPressShield({required this.active, required this.child});
+
+  final bool active;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onLongPress: active ? () {} : null,
+      child: child,
+    );
   }
 }
 

@@ -7,6 +7,7 @@ import '../../../core/storage/database/app_database.dart';
 import '../../../core/storage/database/database_provider.dart';
 import '../../../core/storage/database/duplicate_detector_service.dart';
 import '../../../core/storage/database/duplicate_track_group.dart';
+import '../../../core/storage/database/library_category.dart';
 import '../../../core/storage/database/track_auto_enricher.dart';
 import '../../../core/storage/database/track_repository.dart';
 import '../../../core/storage/database/youtube_auto_enricher.dart';
@@ -56,114 +57,89 @@ final StreamProvider<List<Track>> libraryTracksProvider = StreamProvider<List<Tr
   return (db.select(db.tracks)..orderBy([(t) => OrderingTerm.desc(t.createdAt)])).watch();
 });
 
-/// Morceaux insérés avec repli nom-de-fichier ambigu (Étape 8, badge "À
-/// vérifier") — tags ID3 absents et FilenameSanitizer pas assez confiant pour
-/// distinguer Artiste/Titre. Toujours lisibles immédiatement (voir
-/// LibraryScanService), juste signalés pour une correction manuelle.
-final StreamProvider<List<Track>> needsReviewTracksProvider = StreamProvider<List<Track>>((ref) {
-  final AppDatabase db = ref.watch(appDatabaseProvider);
-  return (db.select(db.tracks)
-        ..where((t) => t.requiresUserReview.equals(true))
-        ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
-      .watch();
-});
-
-/// Bascule de la puce de filtre "À vérifier" dans la Bibliothèque (Étape 8).
-class LibraryReviewFilter extends Notifier<bool> {
-  @override
-  bool build() => false;
-
-  void toggle() => state = !state;
-}
-
-final NotifierProvider<LibraryReviewFilter, bool> libraryReviewFilterProvider =
-    NotifierProvider<LibraryReviewFilter, bool>(LibraryReviewFilter.new);
-
-/// Puce de filtre "À enrichir" dans la Bibliothèque (Feuille de route pt.4) —
-/// isole les morceaux dont l'enrichissement (pochette/genres) a échoué ou
-/// n'a jamais été tenté, pour un enrichissement manuel rapide. Pas de colonne
-/// dédiée en base : un morceau "à enrichir" est simplement un morceau qui n'a
-/// ni pochette ni mots-clés, le même critère que la cible de
-/// `_enrichLibrary` — voir [tracksNeedingEnrichment].
-class LibraryEnrichmentFilter extends Notifier<bool> {
-  @override
-  bool build() => false;
-
-  void toggle() => state = !state;
-}
-
-final NotifierProvider<LibraryEnrichmentFilter, bool> libraryEnrichmentFilterProvider =
-    NotifierProvider<LibraryEnrichmentFilter, bool>(LibraryEnrichmentFilter.new);
-
-/// Un morceau `needsManualReview` (tentatives épuisées) ou `requiresReview`
-/// (nom de fichier trop ambigu) reste sans pochette/mots-clés mais ne doit
-/// plus être proposé aux passes automatiques d'"Enrichir tout" — voir
-/// [EnrichmentStatus], [TrackRepository.shouldAttemptEnrichment].
+/// Cible des passes automatiques d'"Enrichir tout" : catégorie "À enrichir"
+/// (voir [libraryCategoryOf]) hors `needsManualReview` (tentatives épuisées,
+/// ne repasse plus dans la file automatique — voir [EnrichmentStatus],
+/// [TrackRepository.shouldAttemptEnrichment]). Un morceau "À renommer" n'y
+/// entre jamais : son Titre/Artiste doivent d'abord être confirmés ; un
+/// morceau "Renommé et enrichi" non plus, y compris s'il y a été placé à la
+/// main (Changer de catégorie).
 bool trackNeedsEnrichment(Track track) =>
-    (track.coverArtPath.isEmpty || track.tags.isEmpty) &&
-    track.enrichmentStatus != EnrichmentStatus.needsManualReview &&
-    track.enrichmentStatus != EnrichmentStatus.requiresReview;
+    libraryCategoryOf(track) == LibraryCategory.toEnrich &&
+    track.enrichmentStatus != EnrichmentStatus.needsManualReview;
 
-/// Critères de filtrage multi-provenance de la Bibliothèque (Section 1) —
-/// distinct de [LibraryEnrichmentFilter] (heuristique pochette/mots-clés
-/// manquants, cible des passes auto) : ceux-ci filtrent sur le statut exact
+/// Sous-catégories de provenance, affichées sous leur catégorie principale
+/// ([category]) une fois celle-ci sélectionnée. Filtrent sur le statut exact
 /// posé par [TrackRepository.recordEnrichmentOutcome]/[TrackRepository.
-/// updateMetadata], donc sur QUI/COMMENT un morceau a été enrichi plutôt que
-/// sur ce qu'il lui manque.
-enum EnrichmentProvenanceFilter { manualTotal, manualItunes, manualYoutube, autoItunes, autoYoutube, needsManualReview }
+/// updateMetadata], donc sur QUI/COMMENT un morceau a été enrichi.
+/// [autoFailed] (tentatives automatiques épuisées) est la seule rangée sous
+/// "À enrichir".
+enum EnrichmentProvenanceFilter { youtubeManual, itunesManual, fullyManual, youtubeAuto, itunesAuto, autoFailed }
 
 extension EnrichmentProvenanceFilterStyle on EnrichmentProvenanceFilter {
   String get label => switch (this) {
-        EnrichmentProvenanceFilter.manualTotal => 'Manuel (total)',
-        EnrichmentProvenanceFilter.manualItunes => 'Manuel iTunes',
-        EnrichmentProvenanceFilter.manualYoutube => 'Manuel YouTube',
-        EnrichmentProvenanceFilter.autoItunes => 'Auto iTunes',
-        EnrichmentProvenanceFilter.autoYoutube => 'Auto YouTube',
-        EnrichmentProvenanceFilter.needsManualReview => 'À enrichir manuellement',
+        EnrichmentProvenanceFilter.youtubeManual => 'Enrichi par YouTube manuel',
+        EnrichmentProvenanceFilter.itunesManual => 'Enrichi par iTunes manuel',
+        EnrichmentProvenanceFilter.fullyManual => 'Enrichi totalement manuellement',
+        EnrichmentProvenanceFilter.youtubeAuto => 'Enrichi par YouTube auto',
+        EnrichmentProvenanceFilter.itunesAuto => 'Enrichi par iTunes auto',
+        EnrichmentProvenanceFilter.autoFailed => 'Échec auto, à enrichir manuellement',
       };
 
-  /// Statuts [EnrichmentStatus] correspondant à ce critère — [manualTotal]
-  /// regroupe les trois variantes manuelles (édition libre + suggestion
-  /// iTunes/YouTube validée).
-  Set<EnrichmentStatus> get matchingStatuses => switch (this) {
-        EnrichmentProvenanceFilter.manualTotal => const {
-            EnrichmentStatus.enrichedManualEdit,
-            EnrichmentStatus.enrichedManualItunes,
-            EnrichmentStatus.enrichedManualYoutube,
-          },
-        EnrichmentProvenanceFilter.manualItunes => const {EnrichmentStatus.enrichedManualItunes},
-        EnrichmentProvenanceFilter.manualYoutube => const {EnrichmentStatus.enrichedManualYoutube},
-        EnrichmentProvenanceFilter.autoItunes => const {EnrichmentStatus.enrichedAutoItunes},
-        EnrichmentProvenanceFilter.autoYoutube => const {EnrichmentStatus.enrichedAutoYoutube},
-        EnrichmentProvenanceFilter.needsManualReview => const {EnrichmentStatus.needsManualReview},
+  EnrichmentStatus get matchingStatus => switch (this) {
+        EnrichmentProvenanceFilter.youtubeManual => EnrichmentStatus.enrichedManualYoutube,
+        EnrichmentProvenanceFilter.itunesManual => EnrichmentStatus.enrichedManualItunes,
+        EnrichmentProvenanceFilter.fullyManual => EnrichmentStatus.enrichedManualEdit,
+        EnrichmentProvenanceFilter.youtubeAuto => EnrichmentStatus.enrichedAutoYoutube,
+        EnrichmentProvenanceFilter.itunesAuto => EnrichmentStatus.enrichedAutoItunes,
+        EnrichmentProvenanceFilter.autoFailed => EnrichmentStatus.needsManualReview,
       };
+
+  LibraryCategory get category =>
+      this == EnrichmentProvenanceFilter.autoFailed ? LibraryCategory.toEnrich : LibraryCategory.done;
 }
 
-/// Sélection multiple de puces de provenance (Section 1) — plusieurs critères
-/// actifs à la fois s'unissent (OU logique, voir [filterTracksByProvenance])
-/// plutôt que de se remplacer, contrairement aux filtres "À vérifier"/"À
-/// enrichir" (mutuellement exclusifs par priorité, voir LibraryScreen.build).
-class LibraryProvenanceFilter extends Notifier<Set<EnrichmentProvenanceFilter>> {
-  @override
-  Set<EnrichmentProvenanceFilter> build() => const {};
+/// Filtre de la Bibliothèque : une catégorie principale au plus (sélection
+/// exclusive) et, dans celle-ci, zéro, une ou plusieurs sous-catégories de
+/// provenance (OU logique entre elles, voir [filterLibraryTracks]).
+class LibraryFilterState {
+  const LibraryFilterState({this.category, this.provenances = const {}});
 
-  void toggle(EnrichmentProvenanceFilter filter) {
-    final Set<EnrichmentProvenanceFilter> next = {...state};
-    if (!next.remove(filter)) next.add(filter);
-    state = next;
+  final LibraryCategory? category;
+  final Set<EnrichmentProvenanceFilter> provenances;
+
+  bool get isActive => category != null || provenances.isNotEmpty;
+}
+
+class LibraryFilterController extends Notifier<LibraryFilterState> {
+  @override
+  LibraryFilterState build() => const LibraryFilterState();
+
+  /// Changer de catégorie efface les sous-catégories : elles n'ont de sens
+  /// que sous leur propre catégorie.
+  void toggleCategory(LibraryCategory category) {
+    state = LibraryFilterState(category: state.category == category ? null : category);
   }
 
-  void clear() => state = const {};
+  void toggleProvenance(EnrichmentProvenanceFilter filter) {
+    final Set<EnrichmentProvenanceFilter> next = {...state.provenances};
+    if (!next.remove(filter)) next.add(filter);
+    state = LibraryFilterState(category: filter.category, provenances: next);
+  }
+
+  void clear() => state = const LibraryFilterState();
 }
 
-final NotifierProvider<LibraryProvenanceFilter, Set<EnrichmentProvenanceFilter>> libraryProvenanceFilterProvider =
-    NotifierProvider<LibraryProvenanceFilter, Set<EnrichmentProvenanceFilter>>(LibraryProvenanceFilter.new);
+final NotifierProvider<LibraryFilterController, LibraryFilterState> libraryFilterProvider =
+    NotifierProvider<LibraryFilterController, LibraryFilterState>(LibraryFilterController.new);
 
-/// Morceaux dont le statut correspond à au moins un des [filters] actifs.
-List<Track> filterTracksByProvenance(List<Track> tracks, Set<EnrichmentProvenanceFilter> filters) {
-  if (filters.isEmpty) return tracks;
-  final Set<EnrichmentStatus> allowedStatuses = filters.expand((f) => f.matchingStatuses).toSet();
-  return tracks.where((t) => allowedStatuses.contains(t.enrichmentStatus)).toList();
+List<Track> filterLibraryTracks(List<Track> tracks, LibraryFilterState filter) {
+  if (!filter.isActive) return tracks;
+  final Set<EnrichmentStatus> allowedStatuses = filter.provenances.map((f) => f.matchingStatus).toSet();
+  return tracks
+      .where((t) => filter.category == null || libraryCategoryOf(t) == filter.category)
+      .where((t) => allowedStatuses.isEmpty || allowedStatuses.contains(t.enrichmentStatus))
+      .toList();
 }
 
 /// Morceaux strictement en double (Titre + Artiste identiques) — alerte
@@ -173,14 +149,6 @@ final StreamProvider<List<DuplicateTrackGroup>> duplicateTrackGroupsProvider =
     StreamProvider<List<DuplicateTrackGroup>>((ref) {
   final AppDatabase db = ref.watch(appDatabaseProvider);
   return DuplicateDetectorService(db).watchDuplicates();
-});
-
-/// Dérivé synchrone de [libraryTracksProvider] plutôt qu'un `StreamProvider`
-/// séparé : se recalcule à chaque nouvelle émission de la bibliothèque sans
-/// dupliquer l'abonnement Drift.
-final Provider<List<Track>> tracksNeedingEnrichmentProvider = Provider<List<Track>>((ref) {
-  final List<Track> tracks = ref.watch(libraryTracksProvider).value ?? const [];
-  return tracks.where(trackNeedsEnrichment).toList();
 });
 
 /// 3 tris disponibles sur la Bibliothèque (Feuille de route pt.5) — appliqué

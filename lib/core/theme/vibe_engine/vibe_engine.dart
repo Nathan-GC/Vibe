@@ -131,16 +131,6 @@ extension VibeCoverPaletteUsage on VibePreset {
       };
 }
 
-/// Presets exposant le bouton "Afficher la pochette" (Section 3) dans
-/// VibeCustomizerScreen — les autres gardent toujours leur pochette visible,
-/// sans réglage proposé.
-extension VibeCoverToggleAvailability on VibePreset {
-  bool get exposesCoverToggle => switch (this) {
-        VibePreset.custom || VibePreset.newOled || VibePreset.neon || VibePreset.retro => true,
-        VibePreset.minimal || VibePreset.glassmorphism || VibePreset.organic || VibePreset.oled => false,
-      };
-}
-
 /// Style de particules du shader GLSL audio-réactif (Vibe Engine — voir
 /// assets/shaders/vibe_particles.frag) : 0 = surcouche buée/pluie/grésillement
 /// néon par-dessus la photo de skyline plein écran (`neon`, voir
@@ -190,8 +180,8 @@ class VibeVisual {
   final List<Color> gradientColors;
   final Color accentColor;
   final String? backgroundImagePath;
-  // Section 3 : pochette masquable pour Custom/New OLED/Neon/Retro (UI dans
-  // VibeCustomizerScreen) — quand `false`, MasterPlayerScreen omet l'image et
+  // Pochette masquable sur toutes les Vibes (UI dans VibeCustomizerScreen)
+  // — quand `false`, MasterPlayerScreen omet l'image et
   // recentre le reste du contenu (titre/artiste/contrôles) à sa place plutôt
   // que de laisser un espace vide.
   final bool showCoverImage;

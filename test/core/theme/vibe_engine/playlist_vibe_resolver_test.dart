@@ -92,18 +92,20 @@ void main() {
     expect(custom.resolvedVibe.showCoverImage, isFalse);
   });
 
-  test('a preset without the cover toggle always shows the cover, whatever was stored (retest QA 61b5cf1)', () async {
-    // Pochette masquée sur Retro puis passage sur Space (pas de bouton
-    // "Afficher la pochette") : l'utilisateur ne doit pas rester bloqué.
-    final Playlist space = await insertPlaylist(
-      PlaylistsCompanion.insert(
-        id: 'p1',
-        title: 'Test',
-        vibeStyle: const Value(VibePreset.oled),
-        showCoverImage: const Value(false),
-      ),
-    );
-    expect(space.showCoverImage, isFalse, reason: 'la valeur stockée est conservée pour un retour sur Retro');
-    expect(space.resolvedVibe.showCoverImage, isTrue);
+  test('"Cacher la cover" applies to every preset, including those that previously had no toggle', () async {
+    // Minimal/Glassmorphism/Organic/Space n'exposaient pas le bouton avant
+    // la v1.2 : la valeur stockée y était ignorée. Chaque Vibe propose
+    // désormais le réglage, qui doit donc être respecté partout.
+    for (final VibePreset preset in VibePreset.values) {
+      final Playlist playlist = await insertPlaylist(
+        PlaylistsCompanion.insert(
+          id: 'hidden-${preset.name}',
+          title: 'Test',
+          vibeStyle: Value(preset),
+          showCoverImage: const Value(false),
+        ),
+      );
+      expect(playlist.resolvedVibe.showCoverImage, isFalse, reason: '$preset should honour the hidden cover');
+    }
   });
 }

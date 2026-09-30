@@ -21,15 +21,6 @@ void main() {
     expect(VibePreset.glassmorphism.ignoresCoverPalette, isFalse);
   });
 
-  test('exposesCoverToggle is true only for Custom/New OLED/Neon/Retro', () {
-    for (final preset in [VibePreset.custom, VibePreset.newOled, VibePreset.neon, VibePreset.retro]) {
-      expect(preset.exposesCoverToggle, isTrue, reason: '$preset should expose the cover toggle');
-    }
-    for (final preset in [VibePreset.minimal, VibePreset.glassmorphism, VibePreset.organic, VibePreset.oled]) {
-      expect(preset.exposesCoverToggle, isFalse, reason: '$preset should not expose the cover toggle');
-    }
-  });
-
   test('Space (oled) keeps its stored name for backward compatibility despite the "Space" label', () {
     expect(VibePreset.oled.name, 'oled');
     expect(VibePreset.oled.label, 'Space');

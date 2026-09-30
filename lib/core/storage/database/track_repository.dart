@@ -9,6 +9,7 @@ import '../metadata_extractor/artist_name_normalizer.dart';
 import '../scanner/scanned_track.dart';
 import 'app_database.dart';
 import 'database_provider.dart';
+import 'library_category.dart';
 import 'missing_playlist_track_reconciler.dart';
 import 'track_enricher.dart';
 
@@ -37,6 +38,12 @@ class TrackRepository {
   Future<Track?> findById(String trackId) {
     return (_db.select(_db.tracks)..where((t) => t.id.equals(trackId))).getSingleOrNull();
   }
+
+  /// Lecture directe de la base, à jour de toutes les écritures déjà
+  /// attendues — contrairement à `libraryTracksProvider.future`, qui renvoie
+  /// la dernière émission du flux Drift, émise de façon asynchrone APRÈS
+  /// chaque écriture (voir LibraryScreen._enrichLibrary).
+  Future<List<Track>> fetchAllTracks() => _db.select(_db.tracks).get();
 
   /// Résout un résultat en ligne (iTunes) vers un morceau déjà possédé
   /// localement, si son titre/artiste correspond — permet au bouton "+" d'un
@@ -287,6 +294,39 @@ class TrackRepository {
     );
   }
 
+  /// "Changer de catégorie" (appui long dans la Bibliothèque) : fait passer
+  /// [trackId] dans [category] en réécrivant les deux seules colonnes dont
+  /// elle dérive (voir [libraryCategoryOf]) :
+  ///  - [LibraryCategory.toRename] : `requiresUserReview` + `requiresReview`,
+  ///    exclu des passes d'enrichissement automatique jusqu'au renommage.
+  ///  - [LibraryCategory.toEnrich] : `pending`, compteur de tentatives remis à
+  ///    zéro — y compris depuis "Échec auto" (`needsManualReview`) : le
+  ///    circuit-breaker est levé, le morceau redevient immédiatement une
+  ///    cible d'"Enrichir tout" (voir [shouldAttemptEnrichment]).
+  ///  - [LibraryCategory.done] : provenance d'enrichissement existante
+  ///    conservée si le morceau était déjà enrichi, sinon sous-catégorie
+  ///    "Enrichi totalement manuellement" (`enrichedManualEdit`) — c'est
+  ///    l'utilisateur qui déclare le morceau terminé (recette QA, choix 1-A).
+  Future<void> forceLibraryCategory(String trackId, LibraryCategory category) async {
+    final Track? track = await findById(trackId);
+    if (track == null) return;
+
+    final EnrichmentStatus status = switch (category) {
+      LibraryCategory.toRename => EnrichmentStatus.requiresReview,
+      LibraryCategory.toEnrich => EnrichmentStatus.pending,
+      LibraryCategory.done => kEnrichedStatuses.contains(track.enrichmentStatus)
+          ? track.enrichmentStatus
+          : EnrichmentStatus.enrichedManualEdit,
+    };
+    await (_db.update(_db.tracks)..where((t) => t.id.equals(trackId))).write(
+      TracksCompanion(
+        requiresUserReview: Value(category == LibraryCategory.toRename),
+        enrichmentStatus: Value(status),
+        enrichmentAttempts: const Value(0),
+      ),
+    );
+  }
+
   /// Pochette choisie manuellement (appui long sur un morceau) — remplace
   /// toute pochette existante, à la différence de [enrichFromOnlineMetadata]
   /// qui ne comble que les champs vides.
@@ -299,7 +339,7 @@ class TrackRepository {
   /// champs vides (album, année, pochette) plutôt que d'écraser des valeurs
   /// déjà correctes, et fusionne genre/mood/époque dans `tags` sans doublons.
   /// Contrairement à [updateMetadata] (correction manuelle d'un morceau "à
-  /// vérifier"), ce n'est jamais destructif — sûr à relancer plusieurs fois.
+  /// renommer"), ce n'est jamais destructif — sûr à relancer plusieurs fois.
   ///
   /// Retourne `false` sans rien écrire si [match] ne passe pas
   /// [TrackMatchConfidence] (ex. titre local "Feel Good" vs résultat "Confetti"
@@ -356,7 +396,7 @@ class TrackRepository {
   /// Revérifie la confiance ici avec les rôles inversés plutôt que de faire
   /// confiance à l'appelant : [match] doit correspondre à `track.artists`
   /// comme *titre* et à `track.title` comme *artiste*, sans quoi rien n'est
-  /// écrit. Lève aussi le badge "à vérifier" : on a désormais une
+  /// écrit. Sort aussi le morceau de "À renommer" : on a désormais une
   /// confirmation externe fiable.
   Future<bool> correctReversedTitleArtist(String trackId, OnlineTrackResult match) async {
     final Track? track = await findById(trackId);
@@ -413,15 +453,24 @@ class TrackRepository {
   /// fournit ni Album/Genre/Année structurés, ni de garantie que le nom de
   /// chaîne renvoyé soit le véritable artiste (jamais utilisé pour corriger
   /// Titre/Artiste automatiquement, contrairement à
-  /// [correctReversedTitleArtist]). Non destructif : ignoré si une pochette
-  /// existe déjà.
-  Future<bool> enrichCoverArtFromYoutube(String trackId, String thumbnailUrl) async {
+  /// [correctReversedTitleArtist]). Non destructif : une pochette existante
+  /// (choisie à la main, ou HD iTunes) est conservée telle quelle.
+  ///
+  /// Renvoie `true` dès que le morceau existe : trouver une correspondance
+  /// YouTube valide EST le succès de l'enrichissement, que la miniature ait
+  /// dû combler une pochette vide ou non. Bug recette QA v1.2 : renvoyer
+  /// `false` quand une pochette existait déjà comptait une tentative ratée
+  /// à chaque passage, jusqu'à faire tomber à tort le morceau en "Échec
+  /// auto" (`needsManualReview`) alors que YouTube l'avait bien trouvé.
+  Future<bool> applyYoutubeMatch(String trackId, String thumbnailUrl) async {
     final Track? track = await findById(trackId);
-    if (track == null || track.coverArtPath.isNotEmpty) return false;
+    if (track == null) return false;
 
-    await (_db.update(_db.tracks)..where((t) => t.id.equals(trackId))).write(
-      TracksCompanion(coverArtPath: Value(thumbnailUrl)),
-    );
+    if (track.coverArtPath.isEmpty) {
+      await (_db.update(_db.tracks)..where((t) => t.id.equals(trackId))).write(
+        TracksCompanion(coverArtPath: Value(thumbnailUrl)),
+      );
+    }
     return true;
   }
 
