@@ -16,6 +16,7 @@ import '../../../core/storage/database/track_repository.dart';
 import '../../../core/storage/scanner/audio_import_pipeline.dart';
 import '../../../core/storage/scanner/scanned_track.dart';
 import '../../../core/storage/storage_manager/picked_file_cache.dart';
+import '../../settings/data/auto_enrich_preference.dart';
 import '../data/library_enrichment_runner.dart';
 import '../data/library_providers.dart';
 import 'metadata_editor_modal.dart';
@@ -96,8 +97,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       // même principe que le premier scan (voir "Recadrage du Workflow
       // d'Enrichissement"). Seul le bouton étoile ✨ ("Enrichir tout")
       // propose un choix de source.
+      // Droit d'opposition (Paramètres) : désactivé, l'import reste hors-ligne.
       int enriched = 0;
-      if (renamedTracks.isNotEmpty && mounted) {
+      final bool autoEnrich = await AutoEnrichPreference.isEnabled();
+      if (renamedTracks.isNotEmpty && mounted && autoEnrich) {
         final TrackEnricher enricher = ref.read(trackAutoEnricherProvider);
         for (int i = 0; i < renamedTracks.length; i++) {
           if (mounted) {
@@ -116,7 +119,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       if (!mounted) return;
       final String summary = [
         '$imported importé(s)',
-        if (renamedTracks.isNotEmpty) '$enriched/${renamedTracks.length} renommé(s) enrichi(s)',
+        if (renamedTracks.isNotEmpty)
+          autoEnrich ? '$enriched/${renamedTracks.length} renommé(s) enrichi(s)' : 'enrichissement auto désactivé',
         if (tooShort > 0) '$tooShort trop court(s) ou illisible(s)',
         if (failed > 0) '$failed échec(s)${lastError == null ? '' : ' : $lastError'}',
       ].join(', ');
@@ -150,7 +154,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
   TrackEnricher _enricherFor(EnrichmentSource source) => switch (source) {
         EnrichmentSource.itunes => ref.read(trackAutoEnricherProvider),
-        EnrichmentSource.youtube => ref.read(youtubeAutoEnricherProvider),
+        EnrichmentSource.musicBrainz => ref.read(musicBrainzAutoEnricherProvider),
       };
 
   /// Scanner de nettoyage des artistes (Feuille de route Vibe v5) : fusionne
@@ -176,7 +180,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   /// Morceau "À renommer" (recette QA, choix 2-A) : son Titre/Artiste sont
   /// trop ambigus pour une recherche automatique (circuit-breaker
   /// `requiresReview`, qui répondait aussitôt "Aucune correspondance
-  /// trouvée") — ouvre plutôt la recherche manuelle iTunes/YouTube de
+  /// trouvée") — ouvre plutôt la recherche manuelle iTunes/MusicBrainz de
   /// l'éditeur, pré-remplie avec le nom du fichier audio.
   Future<void> _enrichSingle(Track track) async {
     if (libraryCategoryOf(track) == LibraryCategory.toRename) {

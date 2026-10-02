@@ -15,9 +15,12 @@ import 'package:flutter/material.dart';
 ///  - l'image elle-même vit dans un `RepaintBoundary` : l'animation d'échelle
 ///    ou d'ombre au play/pause ne la repeint pas.
 class AlbumArtReactive extends StatefulWidget {
-  const AlbumArtReactive({super.key, required this.imagePath, this.isPlaying = false});
+  const AlbumArtReactive({super.key, required this.imagePath, this.isPlaying = false, this.semanticLabel});
 
   final String? imagePath;
+
+  /// Lu par les lecteurs d'écran (TalkBack), ex. « Pochette de Halo ».
+  final String? semanticLabel;
   final bool isPlaying;
 
   @override
@@ -42,7 +45,14 @@ class _AlbumArtReactiveState extends State<AlbumArtReactive> {
     final ImageProvider? image = _imageFor(widget.imagePath);
     final bool isPlaying = widget.isPlaying;
     final ColorScheme colors = Theme.of(context).colorScheme;
-    final Widget placeholder = Icon(Icons.music_note, size: 96, color: colors.onSurfaceVariant);
+    // Pas de pochette, ou échec de chargement (hors-ligne, fichier absent) :
+    // nommé pour TalkBack plutôt qu'un élément muet.
+    final Widget placeholder = Icon(
+      Icons.music_note,
+      size: 96,
+      color: colors.onSurfaceVariant,
+      semanticLabel: 'Pochette indisponible',
+    );
 
     return AnimatedScale(
       scale: isPlaying ? 1.0 : 0.95,
@@ -70,6 +80,7 @@ class _AlbumArtReactiveState extends State<AlbumArtReactive> {
                         image: image,
                         fit: BoxFit.cover,
                         gaplessPlayback: true,
+                        semanticLabel: widget.semanticLabel,
                         errorBuilder: (context, error, stackTrace) => placeholder,
                       ),
               ),

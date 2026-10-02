@@ -28,3 +28,6 @@ windows/
 # Local
 *.log
 .DS_Store
+
+# graphify (graphe de connaissances local, régénérable)
+graphify-out/

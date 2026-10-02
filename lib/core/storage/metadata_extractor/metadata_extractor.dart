@@ -1,15 +1,15 @@
 import 'dart:io';
 
-import 'package:ffmpeg_kit_flutter_new/ffprobe_kit.dart';
-import 'package:ffmpeg_kit_flutter_new/media_information.dart';
-import 'package:ffmpeg_kit_flutter_new/media_information_session.dart';
+import 'package:ffmpeg_kit_flutter_new_min/ffprobe_kit.dart';
+import 'package:ffmpeg_kit_flutter_new_min/media_information.dart';
+import 'package:ffmpeg_kit_flutter_new_min/media_information_session.dart';
 
 import '../../shared/text/title_cleaner.dart';
 import 'artist_name_normalizer.dart';
 import 'raw_track_metadata.dart';
 
 /// Lit les tags (Title, Artist, Album, Genre, Durée) via `ffprobe` — réutilise
-/// ffmpeg_kit_flutter_new, déjà intégré pour le découpage de silence (Étape 2),
+/// ffmpeg_kit_flutter_new_min, déjà intégré pour le découpage de silence (Étape 2),
 /// plutôt que flutter_media_metadata (abandonné : son android/build.gradle
 /// cible AGP 3.5.0 et `jcenter()`, retiré des versions récentes de Gradle).
 /// Un tag Artist combiné ("Daft Punk feat. Justice") est éclaté en artists[],

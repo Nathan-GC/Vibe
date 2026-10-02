@@ -1,6 +1,7 @@
 import '../../networking/metadata_api_client/metadata_api_client.dart';
 import '../../networking/metadata_api_client/online_track_result.dart';
 import '../../networking/metadata_api_client/track_match_confidence.dart';
+import 'musicbrainz_auto_enricher.dart';
 import 'track_enricher.dart';
 import 'track_repository.dart';
 
@@ -10,12 +11,20 @@ import 'track_repository.dart';
 /// dupliquer la construction de requête et le filtre de confiance à chaque
 /// appelant.
 class TrackAutoEnricher implements TrackEnricher {
-  TrackAutoEnricher({required MetadataApiClient metadataApiClient, required TrackRepository trackRepository})
-      : _metadataApiClient = metadataApiClient,
-        _trackRepository = trackRepository;
+  TrackAutoEnricher({
+    required MetadataApiClient metadataApiClient,
+    required TrackRepository trackRepository,
+    MusicBrainzAutoEnricher? fallback,
+  })  : _metadataApiClient = metadataApiClient,
+        _trackRepository = trackRepository,
+        _fallback = fallback;
 
   final MetadataApiClient _metadataApiClient;
   final TrackRepository _trackRepository;
+
+  /// Repli quand iTunes ne trouve rien de fiable (ordre : iTunes, puis
+  /// MusicBrainz) — `null` : iTunes seul.
+  final MusicBrainzAutoEnricher? _fallback;
 
   /// Nombre de résultats iTunes examinés par tentative : la recherche en
   /// texte libre n'a pas le filtre d'artiste exact de
@@ -95,10 +104,7 @@ class TrackAutoEnricher implements TrackEnricher {
       // interne n'a eu lieu : l'échec est définitif pour ce passage, donc
       // consigné comme tel pour que le morceau reste visible dans "À
       // enrichir" plutôt que de rester dans un flou non comptabilisé.
-      if (singleAttempt) {
-        await _trackRepository.recordEnrichmentOutcome(trackId, success: false, source: EnrichmentSource.itunes);
-      }
-      return false;
+      return _fallbackOrFail(trackId, title, artists, attemptConsumed: singleAttempt);
     }
     if (primaryMatch != null) {
       final bool ok = await _trackRepository.enrichFromOnlineMetadata(trackId, primaryMatch);
@@ -108,24 +114,44 @@ class TrackAutoEnricher implements TrackEnricher {
 
     final bool hasBothFields = artist.isNotEmpty && artist != 'Unknown' && title.isNotEmpty;
     if (singleAttempt || !hasBothFields) {
-      await _trackRepository.recordEnrichmentOutcome(trackId, success: false, source: EnrichmentSource.itunes);
-      return false;
+      return _fallbackOrFail(trackId, title, artists, attemptConsumed: true);
     }
 
     OnlineTrackResult? swappedMatch;
     try {
       swappedMatch = await _search(localTitle: artist, localArtists: [title], queryArtist: title, queryTitle: artist);
     } catch (_) {
-      return false;
+      return _fallbackOrFail(trackId, title, artists, attemptConsumed: false);
     }
     if (swappedMatch == null) {
-      await _trackRepository.recordEnrichmentOutcome(trackId, success: false, source: EnrichmentSource.itunes);
-      return false;
+      return _fallbackOrFail(trackId, title, artists, attemptConsumed: true);
     }
 
     final bool ok = await _trackRepository.correctReversedTitleArtist(trackId, swappedMatch);
     await _trackRepository.recordEnrichmentOutcome(trackId, success: ok, source: EnrichmentSource.itunes);
     return ok;
+  }
+
+  /// iTunes n'a rien donné : repli MusicBrainz s'il est configuré. Une seule
+  /// tentative est comptée pour l'ensemble iTunes + MusicBrainz, et
+  /// seulement si une recherche a réellement abouti ([attemptConsumed] côté
+  /// iTunes, ou réponse MusicBrainz sans correspondance) — une erreur réseau
+  /// des deux côtés ne consomme rien.
+  Future<bool> _fallbackOrFail(
+    String trackId,
+    String title,
+    List<String> artists, {
+    required bool attemptConsumed,
+  }) async {
+    final bool? found = await _fallback?.tryMatch(trackId: trackId, title: title, artists: artists);
+    if (found == true) {
+      await _trackRepository.recordEnrichmentOutcome(trackId, success: true, source: EnrichmentSource.musicBrainz);
+      return true;
+    }
+    if (attemptConsumed || found == false) {
+      await _trackRepository.recordEnrichmentOutcome(trackId, success: false, source: EnrichmentSource.itunes);
+    }
+    return false;
   }
 
   Future<OnlineTrackResult?> _search({

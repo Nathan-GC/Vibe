@@ -49,14 +49,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.1"
-  archive:
-    dependency: transitive
-    description:
-      name: archive
-      sha256: "6c5bcd986e06b94e3c40244af471750840a3d2341d1f9763a1100a14add517b4"
-      url: "https://pub.dev"
-    source: hosted
-    version: "4.3.0"
   args:
     dependency: transitive
     description:
@@ -353,14 +345,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.1.2"
-  ffmpeg_kit_flutter_new:
+  ffmpeg_kit_flutter_new_min:
     dependency: "direct main"
     description:
-      name: ffmpeg_kit_flutter_new
-      sha256: "112ca70a36babc2951cddc879990aad98956b75acb69cdc3fbd2d16bfc941753"
+      name: ffmpeg_kit_flutter_new_min
+      sha256: ae8eb220659cfc941ed651da1c32f910796b461dd6611abf12b863f665aa8ca5
       url: "https://pub.dev"
     source: hosted
-    version: "4.6.2"
+    version: "3.6.2"
   ffmpeg_kit_flutter_platform_interface:
     dependency: transitive
     description:
@@ -539,6 +531,54 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.4.3"
+  flutter_secure_storage:
+    dependency: "direct main"
+    description:
+      name: flutter_secure_storage
+      sha256: d4e1fb6b2cb524868929e78dc0282fa000554b22060fb53789dc481c9fc95bb8
+      url: "https://pub.dev"
+    source: hosted
+    version: "11.2.0"
+  flutter_secure_storage_darwin:
+    dependency: transitive
+    description:
+      name: flutter_secure_storage_darwin
+      sha256: a031ceac9b070e62ef183cd7f7d1a8798ebde402d5049f0fe6eb3a51bd797a21
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.4.3"
+  flutter_secure_storage_linux:
+    dependency: transitive
+    description:
+      name: flutter_secure_storage_linux
+      sha256: caa75bd78f017422912e3a904933113b2428eb79f981ac37acd2dd2a700458ea
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.0.3"
+  flutter_secure_storage_platform_interface:
+    dependency: transitive
+    description:
+      name: flutter_secure_storage_platform_interface
+      sha256: "64951127f001f546891c86f414972bf49ef2c4c8a4c92c65f5790cc0c9100045"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.1.1"
+  flutter_secure_storage_web:
+    dependency: transitive
+    description:
+      name: flutter_secure_storage_web
+      sha256: "073a62b3aeb866ab4ce795f960413948e51e5a42a9b0c8333b6daf5bb3208a1c"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.1.1"
+  flutter_secure_storage_windows:
+    dependency: transitive
+    description:
+      name: flutter_secure_storage_windows
+      sha256: "471951813a97006d899db4948acc654a4f28c440083ea08178935ce20b173ec1"
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.2.2"
   flutter_test:
     dependency: "direct dev"
     description: flutter
@@ -1045,14 +1085,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.5.3"
-  posix:
-    dependency: transitive
-    description:
-      name: posix
-      sha256: bc1bad54ad2b735816e31f8d4600cfde6c7839975085ddfbca48b6c9f7c4044e
-      url: "https://pub.dev"
-    source: hosted
-    version: "6.5.2"
   process:
     dependency: transitive
     description:
@@ -1221,14 +1253,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.0.0"
-  simple_sparse_list:
-    dependency: transitive
-    description:
-      name: simple_sparse_list
-      sha256: aa648fd240fa39b49dcd11c19c266990006006de6699a412de485695910fbc1f
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.1.4"
   sky_engine:
     dependency: transitive
     description: flutter
@@ -1299,7 +1323,7 @@ packages:
     source: hosted
     version: "0.7.0+eol"
   sqlite3:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: sqlite3
       sha256: "4c7fe79840389aaeaf05fd093f795b631b5a98e2bd28d54e555c100f4a9c7a1c"
@@ -1402,14 +1426,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.4.0"
-  unicode:
-    dependency: transitive
-    description:
-      name: unicode
-      sha256: a6f7bcfc8ea1d5ce1f6c0b1c39117a9919f4953edd9fd7a64090a9796c499b57
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.1.9"
   uuid:
     dependency: transitive
     description:
@@ -1609,14 +1625,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.2.4"
-  youtube_explode_dart:
-    dependency: "direct main"
-    description:
-      name: youtube_explode_dart
-      sha256: "10134a53989b2f3dc576121735aec8fc6d88784956f4a2ad1a2525b006373a76"
-      url: "https://pub.dev"
-    source: hosted
-    version: "3.1.0"
 sdks:
   dart: ">=3.13.0-0 <4.0.0"
   flutter: ">=3.44.0"

@@ -23,7 +23,13 @@ class OnlineTrackCard extends ConsumerWidget {
         leading: ClipRRect(
           borderRadius: BorderRadius.circular(8),
           child: track.coverArtUrl != null
-              ? Image.network(track.coverArtUrl!, width: 48, height: 48, fit: BoxFit.cover)
+              ? Image.network(
+                  track.coverArtUrl!,
+                  width: 48,
+                  height: 48,
+                  fit: BoxFit.cover,
+                  semanticLabel: 'Pochette de ${track.title}',
+                )
               : Container(
                   width: 48,
                   height: 48,
@@ -67,7 +73,11 @@ class OnlineTrackCard extends ConsumerWidget {
                 tooltip: isPlayingThis ? 'Arrêter la preview' : 'Écouter un extrait (20-30s)',
                 onPressed: () => ref.read(previewPlayerControllerProvider.notifier).togglePreview(track.previewUrl!),
               ),
-            if (onAdd != null) IconButton(icon: const Icon(Icons.add_circle_outline), onPressed: onAdd),
+            if (onAdd != null)
+              IconButton(
+                icon: const Icon(Icons.add_circle_outline, semanticLabel: 'Ajouter à une playlist'),
+                onPressed: onAdd,
+              ),
           ],
         ),
       ),

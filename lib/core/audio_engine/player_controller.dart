@@ -49,6 +49,15 @@ class PlayerSnapshot {
   }
 }
 
+/// Moteur audio natif unique de l'app, isolé dans son propre provider pour
+/// pouvoir être remplacé par un faux lecteur dans les tests du
+/// [PlayerController].
+final Provider<AudioPlayer> audioPlayerProvider = Provider<AudioPlayer>((ref) {
+  final AudioPlayer player = AudioPlayer();
+  ref.onDispose(player.dispose);
+  return player;
+});
+
 /// Couche B de l'état global (lecteur natif) : joue la Queue en respectant le
 /// découpage de silence (trim_start_ms/trim_end_ms, Étape 2), avance
 /// automatiquement en fin de piste, et persiste la dernière piste active pour
@@ -57,13 +66,25 @@ class PlayerSnapshot {
 /// (Couche C) — seule la position, exposée en Stream, est partagée.
 @riverpod
 class PlayerController extends _$PlayerController {
-  final AudioPlayer _player = AudioPlayer();
+  late final AudioPlayer _player = ref.read(audioPlayerProvider);
   final PlayerStateStorage _storage = PlayerStateStorage();
   StreamSubscription<PlayerState>? _completionSub;
   StreamSubscription<AudioInterruptionEvent>? _interruptionSub;
   StreamSubscription<void>? _becomingNoisySub;
   int _currentIndex = -1;
   int _loadToken = 0;
+
+  /// Dernière piste DEMANDÉE, mise à jour de façon synchrone — en avance sur
+  /// [_currentIndex] (piste réellement chargée) pendant un chargement : un
+  /// zap rapide cumule ses pas depuis cette cible, jamais depuis une piste
+  /// encore en cours de chargement (bug : 3 × "Précédent" ne reculaient que
+  /// d'un titre).
+  int _targetIndex = -1;
+
+  /// Anti-rebond de Suivant/Précédent : un seul chargement audio une fois les
+  /// appuis stabilisés.
+  Timer? _skipDebounce;
+  static const Duration skipDebounce = Duration(milliseconds: 200);
 
   @override
   PlayerSnapshot build() {
@@ -90,7 +111,7 @@ class PlayerController extends _$PlayerController {
       _completionSub?.cancel();
       _interruptionSub?.cancel();
       _becomingNoisySub?.cancel();
-      _player.dispose();
+      _skipDebounce?.cancel();
     });
 
     Future.microtask(_restoreLastSession);
@@ -164,14 +185,14 @@ class PlayerController extends _$PlayerController {
 
     if (enteringShuffle) {
       ref.read(queueControllerProvider.notifier).shuffle(keepFirst: state.currentTrack?.id);
-      _currentIndex = 0;
+      _currentIndex = _targetIndex = 0;
     } else if (leavingShuffle) {
       ref.read(queueControllerProvider.notifier).unshuffle();
       final String? currentId = state.currentTrack?.id;
       if (currentId != null) {
         final List<Track> tracks = await ref.read(queueTracksProvider.future);
         final int restoredIndex = tracks.indexWhere((t) => t.id == currentId);
-        if (restoredIndex >= 0) _currentIndex = restoredIndex;
+        if (restoredIndex >= 0) _currentIndex = _targetIndex = restoredIndex;
       }
     }
 
@@ -179,18 +200,21 @@ class PlayerController extends _$PlayerController {
   }
 
   Future<void> playTrackAt(int startIndex, {String? playlistId}) async {
-    final List<Track> tracks = await ref.read(queueTracksProvider.future);
-    if (startIndex < 0 || startIndex >= tracks.length) return;
-
-    // Jeton de génération : entre les deux `await` ci-dessous, un autre appel
-    // (tap rapide sur "suivant", changement de playlist, complétion naturelle
-    // qui se chevauche avec un swap manuel) peut démarrer et devenir le
-    // véritable état courant. Sans ce garde, celui des deux qui finit en
-    // second écraserait inconditionnellement `_currentIndex`/`state` même s'il
-    // est désormais périmé — un bug réel observé en testant l'auto-avance
-    // (Vibe Engine) : la Vibe affichée pouvait brièvement correspondre à une
-    // ancienne playlist après un changement rapide.
+    // Jeton de génération, pris AVANT tout `await` (ordre des appels
+    // garanti) : un autre appel (tap rapide sur "suivant", changement de
+    // playlist, complétion naturelle qui se chevauche avec un swap manuel)
+    // peut démarrer pendant le chargement et devenir le véritable état
+    // courant. Sans ce garde, celui qui finit en second écraserait
+    // inconditionnellement `_currentIndex`/`state` même s'il est périmé — un
+    // bug réel observé en testant l'auto-avance (Vibe Engine) : la Vibe
+    // affichée pouvait brièvement correspondre à une ancienne playlist.
     final int token = ++_loadToken;
+    // Tout chargement explicite remplace un zap encore en attente.
+    _skipDebounce?.cancel();
+    _targetIndex = startIndex;
+
+    final List<Track> tracks = await ref.read(queueTracksProvider.future);
+    if (token != _loadToken || startIndex < 0 || startIndex >= tracks.length) return;
 
     // Boucle (et non un simple appel unique) : un fichier référencé en base
     // peut avoir été supprimé/déplacé/corrompu hors de l'app (nettoyage
@@ -213,12 +237,18 @@ class PlayerController extends _$PlayerController {
           ),
         );
       } catch (_) {
+        // Chargement interrompu par un plus récent (just_audio annule le
+        // précédent) : ce n'est PAS un fichier illisible. Enchaîner sur le
+        // morceau suivant relancerait un chargement qui interromprait à son
+        // tour celui voulu — cascade réelle jusqu'à la fin de la Queue lors
+        // d'un zap rapide.
+        if (token != _loadToken) return;
         continue;
       }
 
       if (token != _loadToken) return;
 
-      _currentIndex = index;
+      _currentIndex = _targetIndex = index;
       // `copyWith` plutôt qu'un nouveau `PlayerSnapshot(...)` : préserve
       // `repeatMode` d'un changement de piste à l'autre (suivant/précédent,
       // auto-avance...) — sans quoi le mode Aléatoire/Répétition reviendrait
@@ -270,16 +300,29 @@ class PlayerController extends _$PlayerController {
 
   Future<void> togglePlayPause() => _player.playing ? pause() : play();
 
-  Future<void> next() async {
-    final List<Track> tracks = await ref.read(queueTracksProvider.future);
-    if (_currentIndex + 1 < tracks.length) await playTrackAt(_currentIndex + 1);
-  }
+  Future<void> next() async => _skip(1);
 
-  Future<void> previous() async {
-    if (_currentIndex - 1 >= 0) await playTrackAt(_currentIndex - 1);
+  Future<void> previous() async => _skip(-1);
+
+  /// Suivant/Précédent — boutons du Lecteur ET notification/écran verrouillé
+  /// (PlaylistAudioHandler appelle ces mêmes méthodes). Chaque appui décale
+  /// la cible de façon synchrone depuis la dernière cible demandée, affiche
+  /// aussitôt le morceau visé, et un seul chargement audio part une fois les
+  /// appuis stabilisés ([skipDebounce]).
+  void _skip(int delta) {
+    final List<Track>? tracks = ref.read(queueTracksProvider).value;
+    final int target = _targetIndex + delta;
+    if (tracks == null || target < 0 || target >= tracks.length) return;
+
+    _targetIndex = target;
+    state = state.copyWith(currentTrack: tracks[target]);
+    _skipDebounce?.cancel();
+    _skipDebounce = Timer(skipDebounce, () => playTrackAt(target));
   }
 
   Future<void> _onTrackCompleted() async {
+    // Zap en attente : c'est lui qui décide de la prochaine piste.
+    if (_skipDebounce?.isActive ?? false) return;
     // Un swap de source (`playTrackAt`) en cours peut émettre un événement
     // `completed` fantôme pour l'ancienne source qu'il est en train de
     // remplacer — capturer le jeton avant l'`await` puis le revérifier permet
@@ -336,7 +379,7 @@ class PlayerController extends _$PlayerController {
     // l'onboarding du premier lancement, Étape 8) — écrire `state` après coup
     // lèverait sinon une exception.
     if (!ref.mounted) return;
-    _currentIndex = index;
+    _currentIndex = _targetIndex = index;
     // `currentPlaylistId` restauré ici (Bug critique QA, cold restart) : sans
     // lui, MasterPlayerScreen/activeVibeProvider ne retrouvaient jamais la
     // playlist active après un force-stop/relance et retombaient

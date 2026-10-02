@@ -33,6 +33,7 @@ class PlaylistCoverImage extends StatelessWidget {
         borderRadius: borderRadius,
         child: Image.file(
           File(playlist.coverImagePath),
+          semanticLabel: 'Pochette de la playlist ${playlist.title}',
           fit: BoxFit.cover,
           errorBuilder: (context, error, stackTrace) =>
               _CompositeFallback(playlist: playlist, borderRadius: borderRadius),

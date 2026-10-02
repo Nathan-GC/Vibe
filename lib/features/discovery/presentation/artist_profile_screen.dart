@@ -95,6 +95,7 @@ class _ArtistHeader extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
                 child: Image.network(
                   data.artworkUrl!,
+                  semanticLabel: 'Illustration de ${data.name}',
                   width: 64,
                   height: 64,
                   fit: BoxFit.cover,
@@ -236,6 +237,7 @@ class _AlbumTile extends StatelessWidget {
                 child: album.artworkUrl != null
                     ? Image.network(
                         album.artworkUrl!,
+                        semanticLabel: 'Pochette de ${album.album}',
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) => Container(
                           color: Theme.of(context).colorScheme.surfaceContainerHighest,

@@ -19,7 +19,7 @@ import '../data/library_providers.dart';
 /// automatique). Un fichier importé est stocké sous `{artiste}-{titre}.mp3`
 /// (StorageManagerService.importAudioFile) : on retire le préfixe
 /// `Unknown-` d'un artiste non déduit et le suffixe ` (2)` d'anti-collision,
-/// et on remplace `_`/`-` par des espaces (texte libre pour iTunes/YouTube).
+/// et on remplace `_`/`-` par des espaces (texte libre pour iTunes/MusicBrainz).
 /// Repli sur [fallbackTitle] (titre existant) si le nom n'apporte rien.
 String searchQueryFromFilePath(String filePath, {required String fallbackTitle}) {
   final String query = p
@@ -167,8 +167,8 @@ class _MetadataEditorModalState extends ConsumerState<MetadataEditorModal> {
         results = switch (_searchSource) {
           EnrichmentSource.itunes =>
             await ref.read(metadataApiClientProvider).searchByArtistAndTitle(artist: artist, title: title, limit: 5),
-          EnrichmentSource.youtube =>
-            await ref.read(youtubeEnricherServiceProvider).search(artist: artist, title: title),
+          EnrichmentSource.musicBrainz =>
+            await ref.read(musicBrainzClientProvider).searchRecordings(artist: artist, title: title),
         };
       } catch (_) {
         // Pas de réseau, timeout, API indisponible... — la modale reste
@@ -213,7 +213,7 @@ class _MetadataEditorModalState extends ConsumerState<MetadataEditorModal> {
     }
     return source == EnrichmentSource.itunes
         ? EnrichmentStatus.enrichedManualItunes
-        : EnrichmentStatus.enrichedManualYoutube;
+        : EnrichmentStatus.enrichedManualMusicBrainz;
   }
 
   /// Pochette manuelle (Option 2) — même mécanique que
@@ -308,9 +308,9 @@ class _MetadataEditorModalState extends ConsumerState<MetadataEditorModal> {
                     ButtonSegment(
                         value: EnrichmentSource.itunes, label: Text('iTunes'), icon: Icon(Icons.apple, size: 16)),
                     ButtonSegment(
-                      value: EnrichmentSource.youtube,
-                      label: Text('YouTube'),
-                      icon: Icon(Icons.smart_display_outlined, size: 16),
+                      value: EnrichmentSource.musicBrainz,
+                      label: Text('MusicBrainz'),
+                      icon: Icon(Icons.library_music_outlined, size: 16),
                     ),
                   ],
                   selected: {_searchSource},
@@ -374,7 +374,13 @@ class _MetadataEditorModalState extends ConsumerState<MetadataEditorModal> {
                     leading: suggestion.coverArtUrl != null
                         ? ClipRRect(
                             borderRadius: BorderRadius.circular(6),
-                            child: Image.network(suggestion.coverArtUrl!, width: 40, height: 40, fit: BoxFit.cover),
+                            child: Image.network(
+                              suggestion.coverArtUrl!,
+                              width: 40,
+                              height: 40,
+                              fit: BoxFit.cover,
+                              semanticLabel: 'Pochette proposée pour ${suggestion.title}',
+                            ),
                           )
                         : const Icon(Icons.album_outlined),
                     title: Text('${suggestion.artist} - ${suggestion.title}',

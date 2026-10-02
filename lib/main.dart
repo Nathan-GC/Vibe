@@ -1,14 +1,17 @@
 import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show LicenseEntryWithLineBreaks, LicenseRegistry, kDebugMode;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'app/app.dart';
 import 'app/bootstrap.dart';
 import 'core/audio_engine/playlist_audio_handler.dart';
 import 'core/networking/dev_http_overrides.dart';
+import 'features/onboarding/presentation/legal_consent.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,11 +19,22 @@ Future<void> main() async {
     HttpOverrides.global = DevHttpOverrides();
   }
 
+  // Police Outfit embarquée (assets/fonts/) : aucun appel à Google Fonts au
+  // lancement. Sa licence SIL OFL 1.1 doit accompagner les fichiers.
+  GoogleFonts.config.allowRuntimeFetching = false;
+  LicenseRegistry.addLicense(() async* {
+    yield LicenseEntryWithLineBreaks(['Outfit (police)'], await rootBundle.loadString('assets/fonts/OFL.txt'));
+  });
+
   // Un seul conteneur, partagé entre le handler audio_service (créé ici, hors
   // de l'arbre de widgets) et le reste de l'app (voir UncontrolledProviderScope
   // ci-dessous) — le handler pilote ainsi le même PlayerController que l'UI,
   // sans second moteur `just_audio` ni duplication de la logique de Queue.
   final ProviderContainer container = ProviderContainer();
+
+  // Conditions en vigueur acceptées avant tout le reste (premier lancement ou
+  // mise à jour) : lecteur, notification média et réseau attendent jusque-là.
+  await runLegalConsentGate(container);
 
   await bootstrap();
 

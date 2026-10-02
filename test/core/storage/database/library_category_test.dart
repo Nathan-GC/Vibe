@@ -76,10 +76,10 @@ void main() {
       _track('rename', requiresUserReview: true, status: EnrichmentStatus.requiresReview),
       _track('pending'),
       _track('failed', status: EnrichmentStatus.needsManualReview),
-      _track('ytManual', status: EnrichmentStatus.enrichedManualYoutube),
+      _track('mbManual', status: EnrichmentStatus.enrichedManualMusicBrainz),
       _track('itManual', status: EnrichmentStatus.enrichedManualItunes),
       _track('fullManual', status: EnrichmentStatus.enrichedManualEdit),
-      _track('ytAuto', status: EnrichmentStatus.enrichedAutoYoutube),
+      _track('mbAuto', status: EnrichmentStatus.enrichedAutoMusicBrainz),
       _track('itAuto', status: EnrichmentStatus.enrichedAutoItunes),
     ];
     List<String> ids(List<Track> tracks) => tracks.map((t) => t.id).toList();
@@ -95,19 +95,19 @@ void main() {
           ['pending', 'failed']);
       expect(
         ids(filterLibraryTracks(library, const LibraryFilterState(category: LibraryCategory.done))),
-        ['ytManual', 'itManual', 'fullManual', 'ytAuto', 'itAuto'],
+        ['mbManual', 'itManual', 'fullManual', 'mbAuto', 'itAuto'],
       );
     });
 
     test('provenance sub-categories combine with OR inside their category', () {
       const filter = LibraryFilterState(
         category: LibraryCategory.done,
-        provenances: {EnrichmentProvenanceFilter.youtubeAuto, EnrichmentProvenanceFilter.fullyManual},
+        provenances: {EnrichmentProvenanceFilter.musicBrainzAuto, EnrichmentProvenanceFilter.fullyManual},
       );
-      expect(ids(filterLibraryTracks(library, filter)), ['fullManual', 'ytAuto']);
+      expect(ids(filterLibraryTracks(library, filter)), ['fullManual', 'mbAuto']);
     });
 
-    test('"Enrichi totalement manuellement" no longer includes the iTunes/YouTube manual variants', () {
+    test('"Enrichi totalement manuellement" no longer includes the iTunes/MusicBrainz manual variants', () {
       const filter = LibraryFilterState(
         category: LibraryCategory.done,
         provenances: {EnrichmentProvenanceFilter.fullyManual},
@@ -214,7 +214,7 @@ void main() {
     test('forcing an "Échec auto" track to "À enrichir" makes it eligible again for "Enrichir tout"', () async {
       await insert('t1');
       for (int i = 0; i < TrackRepository.maxEnrichmentAttempts; i++) {
-        await repository.recordEnrichmentOutcome('t1', success: false, source: EnrichmentSource.youtube);
+        await repository.recordEnrichmentOutcome('t1', success: false, source: EnrichmentSource.musicBrainz);
       }
       final Track failed = (await repository.findById('t1'))!;
       expect(failed.enrichmentStatus, EnrichmentStatus.needsManualReview, reason: 'Échec auto');
@@ -232,11 +232,11 @@ void main() {
 
     test('keeps the real provenance of an already-enriched track moved back to done', () async {
       await insert('t1', requiresUserReview: true);
-      await repository.recordEnrichmentOutcome('t1', success: true, source: EnrichmentSource.youtube);
+      await repository.recordEnrichmentOutcome('t1', success: true, source: EnrichmentSource.musicBrainz);
       await repository.forceLibraryCategory('t1', LibraryCategory.done);
 
       final Track track = (await repository.findById('t1'))!;
-      expect(track.enrichmentStatus, EnrichmentStatus.enrichedAutoYoutube);
+      expect(track.enrichmentStatus, EnrichmentStatus.enrichedAutoMusicBrainz);
       expect(track.requiresUserReview, isFalse);
       expect(libraryCategoryOf(track), LibraryCategory.done);
     });

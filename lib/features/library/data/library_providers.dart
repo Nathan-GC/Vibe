@@ -2,15 +2,15 @@ import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/networking/metadata_api_client/metadata_api_client.dart';
-import '../../../core/networking/youtube/youtube_enricher_service.dart';
+import '../../../core/networking/musicbrainz/musicbrainz_client.dart';
 import '../../../core/storage/database/app_database.dart';
 import '../../../core/storage/database/database_provider.dart';
 import '../../../core/storage/database/duplicate_detector_service.dart';
 import '../../../core/storage/database/duplicate_track_group.dart';
 import '../../../core/storage/database/library_category.dart';
+import '../../../core/storage/database/musicbrainz_auto_enricher.dart';
 import '../../../core/storage/database/track_auto_enricher.dart';
 import '../../../core/storage/database/track_repository.dart';
-import '../../../core/storage/database/youtube_auto_enricher.dart';
 import '../../../core/storage/scanner/library_scan_service.dart';
 import '../../../core/storage/storage_manager/storage_manager_service.dart';
 
@@ -24,11 +24,12 @@ final Provider<MetadataApiClient> metadataApiClientProvider = Provider<MetadataA
 
 /// Partagé entre l'enrichissement manuel (Bibliothèque) et l'enrichissement
 /// automatique de post-import (onboarding, import manuel) — voir
-/// [TrackAutoEnricher].
+/// [TrackAutoEnricher]. Ordre automatique : iTunes, puis MusicBrainz en repli.
 final Provider<TrackAutoEnricher> trackAutoEnricherProvider = Provider<TrackAutoEnricher>((ref) {
   return TrackAutoEnricher(
     metadataApiClient: ref.watch(metadataApiClientProvider),
     trackRepository: ref.watch(trackRepositoryProvider),
+    fallback: ref.watch(musicBrainzAutoEnricherProvider),
   );
 });
 
@@ -36,17 +37,13 @@ final Provider<StorageManagerService> storageManagerServiceProvider = Provider<S
   return StorageManagerService();
 });
 
-final Provider<YoutubeEnricherService> youtubeEnricherServiceProvider = Provider<YoutubeEnricherService>((ref) {
-  final service = YoutubeEnricherService();
-  ref.onDispose(service.dispose);
-  return service;
-});
+final Provider<MusicBrainzClient> musicBrainzClientProvider = Provider<MusicBrainzClient>((ref) => MusicBrainzClient());
 
-/// Pendant YouTube de [trackAutoEnricherProvider] (Section 2) — voir
-/// [YoutubeAutoEnricher].
-final Provider<YoutubeAutoEnricher> youtubeAutoEnricherProvider = Provider<YoutubeAutoEnricher>((ref) {
-  return YoutubeAutoEnricher(
-    youtubeEnricherService: ref.watch(youtubeEnricherServiceProvider),
+/// Source MusicBrainz + Cover Art Archive (remplace YouTube depuis la v1.3)
+/// — voir [MusicBrainzAutoEnricher].
+final Provider<MusicBrainzAutoEnricher> musicBrainzAutoEnricherProvider = Provider<MusicBrainzAutoEnricher>((ref) {
+  return MusicBrainzAutoEnricher(
+    client: ref.watch(musicBrainzClientProvider),
     trackRepository: ref.watch(trackRepositoryProvider),
   );
 });
@@ -74,23 +71,30 @@ bool trackNeedsEnrichment(Track track) =>
 /// updateMetadata], donc sur QUI/COMMENT un morceau a été enrichi.
 /// [autoFailed] (tentatives automatiques épuisées) est la seule rangée sous
 /// "À enrichir".
-enum EnrichmentProvenanceFilter { youtubeManual, itunesManual, fullyManual, youtubeAuto, itunesAuto, autoFailed }
+enum EnrichmentProvenanceFilter {
+  musicBrainzManual,
+  itunesManual,
+  fullyManual,
+  musicBrainzAuto,
+  itunesAuto,
+  autoFailed
+}
 
 extension EnrichmentProvenanceFilterStyle on EnrichmentProvenanceFilter {
   String get label => switch (this) {
-        EnrichmentProvenanceFilter.youtubeManual => 'Enrichi par YouTube manuel',
+        EnrichmentProvenanceFilter.musicBrainzManual => 'Enrichi par MusicBrainz manuel',
         EnrichmentProvenanceFilter.itunesManual => 'Enrichi par iTunes manuel',
         EnrichmentProvenanceFilter.fullyManual => 'Enrichi totalement manuellement',
-        EnrichmentProvenanceFilter.youtubeAuto => 'Enrichi par YouTube auto',
+        EnrichmentProvenanceFilter.musicBrainzAuto => 'Enrichi par MusicBrainz auto',
         EnrichmentProvenanceFilter.itunesAuto => 'Enrichi par iTunes auto',
         EnrichmentProvenanceFilter.autoFailed => 'Échec auto, à enrichir manuellement',
       };
 
   EnrichmentStatus get matchingStatus => switch (this) {
-        EnrichmentProvenanceFilter.youtubeManual => EnrichmentStatus.enrichedManualYoutube,
+        EnrichmentProvenanceFilter.musicBrainzManual => EnrichmentStatus.enrichedManualMusicBrainz,
         EnrichmentProvenanceFilter.itunesManual => EnrichmentStatus.enrichedManualItunes,
         EnrichmentProvenanceFilter.fullyManual => EnrichmentStatus.enrichedManualEdit,
-        EnrichmentProvenanceFilter.youtubeAuto => EnrichmentStatus.enrichedAutoYoutube,
+        EnrichmentProvenanceFilter.musicBrainzAuto => EnrichmentStatus.enrichedAutoMusicBrainz,
         EnrichmentProvenanceFilter.itunesAuto => EnrichmentStatus.enrichedAutoItunes,
         EnrichmentProvenanceFilter.autoFailed => EnrichmentStatus.needsManualReview,
       };

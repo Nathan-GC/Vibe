@@ -1,5 +1,5 @@
-import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_new/return_code.dart';
+import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new_min/return_code.dart';
 
 class TrimResult {
   const TrimResult({required this.trimStartMs, required this.trimEndMs});

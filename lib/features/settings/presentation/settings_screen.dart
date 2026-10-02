@@ -1,10 +1,13 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:open_filex/open_filex.dart';
 
+import '../../../core/shared/constants/app_constants.dart';
 import '../../../core/theme/design_system/app_spacing.dart';
 import '../../../core/theme/global_theme/global_theme.dart';
+import '../data/auto_enrich_preference.dart';
 
 /// Accessible depuis les 3 écrans principaux (Découverte, Lecteur, Espace).
 /// Section "Apparence" (Design System) : mode clair/sombre/système et
@@ -82,14 +85,37 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: AppSpacing.l),
           const Divider(height: 1),
           const SizedBox(height: AppSpacing.s),
-          const _SectionTitle('Maintenance'),
-          ListTile(
-            leading: const Icon(Icons.system_update_outlined),
-            title: const Text('Mise à jour de l\'application (APK)'),
-            subtitle: const Text('Installer un fichier .apk depuis le stockage local'),
-            onTap: () => _updateFromApk(context),
+          const _SectionTitle('Confidentialité'),
+          SwitchListTile(
+            secondary: const Icon(Icons.cloud_sync_outlined),
+            title: const Text('Enrichissement automatique à l\'importation'),
+            subtitle: const Text(
+              'Après un import, recherche pochette et infos sur iTunes puis MusicBrainz. '
+              'Désactivé : l\'import reste 100 % hors-ligne.',
+            ),
+            value: ref.watch(autoEnrichOnImportProvider),
+            onChanged: (value) => ref.read(autoEnrichOnImportProvider.notifier).set(value),
           ),
           const Divider(height: 1),
+          // Interdit par Google Play (auto-mise à jour hors Play Store), voir
+          // AppConstants.playStoreBuild.
+          if (!AppConstants.playStoreBuild) ...[
+            const SizedBox(height: AppSpacing.s),
+            const _SectionTitle('Maintenance'),
+            ListTile(
+              leading: const Icon(Icons.system_update_outlined),
+              title: const Text('Mise à jour de l\'application (APK)'),
+              subtitle: const Text('Installer un fichier .apk depuis le stockage local'),
+              onTap: () => _updateFromApk(context),
+            ),
+            const Divider(height: 1),
+          ],
+          ListTile(
+            leading: const Icon(Icons.gavel_outlined),
+            title: const Text('Légal'),
+            subtitle: const Text('Confidentialité, conditions, licences'),
+            onTap: () => context.push('/settings/legal'),
+          ),
           const ListTile(
             leading: Icon(Icons.info_outline),
             title: Text('À propos'),

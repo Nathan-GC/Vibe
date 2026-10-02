@@ -18,6 +18,7 @@ import '../features/player/presentation/master_player_screen.dart';
 import '../features/playlists/presentation/editor/playlist_editor_screen.dart';
 import '../features/playlists/presentation/personal_space_screen.dart';
 import '../features/playlists/presentation/vibe_customizer/vibe_customizer_screen.dart';
+import '../features/settings/presentation/legal_screen.dart';
 import '../features/settings/presentation/settings_screen.dart';
 
 final GoRouter appRouter = GoRouter(
@@ -25,6 +26,7 @@ final GoRouter appRouter = GoRouter(
   routes: [
     GoRoute(path: '/onboarding', builder: (context, state) => const OnboardingScreen()),
     GoRoute(path: '/settings', builder: (context, state) => const SettingsScreen()),
+    GoRoute(path: '/settings/legal', builder: (context, state) => const LegalScreen()),
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) => _TabShell(navigationShell: navigationShell),
       branches: [

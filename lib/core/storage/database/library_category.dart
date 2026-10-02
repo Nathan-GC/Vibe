@@ -26,10 +26,10 @@ extension LibraryCategoryLabel on LibraryCategory {
 /// `enrichedManualEdit` (voir `TrackRepository.forceLibraryCategory`).
 const Set<EnrichmentStatus> kEnrichedStatuses = {
   EnrichmentStatus.enrichedAutoItunes,
-  EnrichmentStatus.enrichedAutoYoutube,
+  EnrichmentStatus.enrichedAutoMusicBrainz,
   EnrichmentStatus.enrichedManualEdit,
   EnrichmentStatus.enrichedManualItunes,
-  EnrichmentStatus.enrichedManualYoutube,
+  EnrichmentStatus.enrichedManualMusicBrainz,
 };
 
 LibraryCategory libraryCategoryOf(Track track) {

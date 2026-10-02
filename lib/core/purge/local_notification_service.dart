@@ -1,7 +1,4 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:permission_handler/permission_handler.dart';
-
-import '../shared/permission_retry.dart';
 
 /// Notification locale "Storage Cleanup" (Étape 7.2). Le callback de tap
 /// n'est câblé que côté app au premier plan (un isolate d'arrière-plan n'a
@@ -9,9 +6,9 @@ import '../shared/permission_retry.dart';
 class LocalNotificationService {
   final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
 
+  /// Ne demande aucune autorisation : seul l'onboarding le fait, une fois
+  /// (voir OnboardingPermissions.requestNotifications).
   Future<void> initialize({void Function()? onNotificationTap}) async {
-    await requestPermissionWithRetry(Permission.notification);
-
     const AndroidInitializationSettings androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
     const DarwinInitializationSettings iosSettings = DarwinInitializationSettings();
 

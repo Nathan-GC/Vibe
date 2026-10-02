@@ -541,7 +541,11 @@ class _PlayerPageState extends ConsumerState<_PlayerPage> with SingleTickerProvi
           onLongPress: _enterImmersive,
           child: KeyedSubtree(
             key: widget.coverKey,
-            child: AlbumArtReactive(imagePath: albumArtPath, isPlaying: isPlaying),
+            child: AlbumArtReactive(
+              imagePath: albumArtPath,
+              isPlaying: isPlaying,
+              semanticLabel: track == null ? null : 'Pochette de ${track.title}',
+            ),
           ),
         ),
       ),
@@ -840,19 +844,22 @@ class _PlaybackControls extends ConsumerWidget {
         IconButton(
           iconSize: 36,
           color: vibe.accentColor,
-          icon: const Icon(Icons.skip_previous),
+          icon: const Icon(Icons.skip_previous, semanticLabel: 'Morceau précédent'),
           onPressed: controller.previous,
         ),
         IconButton(
           iconSize: 64,
           color: vibe.accentColor,
-          icon: Icon(isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled),
+          icon: Icon(
+            isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
+            semanticLabel: isPlaying ? 'Pause' : 'Lecture',
+          ),
           onPressed: controller.togglePlayPause,
         ),
         IconButton(
           iconSize: 36,
           color: vibe.accentColor,
-          icon: const Icon(Icons.skip_next),
+          icon: const Icon(Icons.skip_next, semanticLabel: 'Morceau suivant'),
           onPressed: controller.next,
         ),
         // Espace muet de la même largeur que le bouton de mode — garde les

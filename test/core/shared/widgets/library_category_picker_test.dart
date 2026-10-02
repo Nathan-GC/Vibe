@@ -40,7 +40,7 @@ void main() {
         trimEndMs: 0,
       ));
       for (int i = 0; i < TrackRepository.maxEnrichmentAttempts; i++) {
-        await repository.recordEnrichmentOutcome('t1', success: false, source: EnrichmentSource.youtube);
+        await repository.recordEnrichmentOutcome('t1', success: false, source: EnrichmentSource.musicBrainz);
       }
       return repository.findById('t1');
     }))!;

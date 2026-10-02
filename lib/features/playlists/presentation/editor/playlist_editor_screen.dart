@@ -217,7 +217,7 @@ class _PlaylistEditorScreenState extends ConsumerState<PlaylistEditorScreen> {
           IconButton(
             icon: _saving
                 ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.save_outlined),
+                : const Icon(Icons.save_outlined, semanticLabel: 'Enregistrer la playlist'),
             onPressed: (_localOrder == null || _saving) ? null : _commit,
           ),
         ],

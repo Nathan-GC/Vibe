@@ -199,9 +199,9 @@ class TrackRepository {
   ///
   /// [enrichmentStatus] (Section 1) : le contenu de l'éditeur ne dit pas à
   /// lui seul si ces valeurs viennent d'une saisie libre ou de la validation
-  /// d'une suggestion iTunes/YouTube — c'est à l'appelant (MetadataEditorModal)
+  /// d'une suggestion iTunes/MusicBrainz — c'est à l'appelant (MetadataEditorModal)
   /// de trancher via `EnrichmentStatus.enrichedManualEdit`/
-  /// `enrichedManualItunes`/`enrichedManualYoutube` selon ce que l'utilisateur
+  /// `enrichedManualItunes`/`enrichedManualMusicBrainz` selon ce que l'utilisateur
   /// vient réellement de faire.
   Future<void> updateMetadata(
     String trackId, {
@@ -266,7 +266,7 @@ class TrackRepository {
   }
 
   /// Met à jour le circuit-breaker après une tentative d'enrichissement
-  /// [TrackAutoEnricher]/[YoutubeAutoEnricher] menée à son terme (recherche
+  /// [TrackAutoEnricher]/[MusicBrainzAutoEnricher] menée à son terme (recherche
   /// API réussie, qu'une correspondance fiable ait été trouvée ou non) —
   /// jamais appelé après une simple erreur réseau/timeout, qui ne doit pas
   /// consommer de tentative (voir [TrackAutoEnricher.enrichTrack]). [source]
@@ -279,7 +279,7 @@ class TrackRepository {
     if (success) {
       final EnrichmentStatus status = source == EnrichmentSource.itunes
           ? EnrichmentStatus.enrichedAutoItunes
-          : EnrichmentStatus.enrichedAutoYoutube;
+          : EnrichmentStatus.enrichedAutoMusicBrainz;
       await (_db.update(_db.tracks)..where((t) => t.id.equals(trackId))).write(
         TracksCompanion(enrichmentStatus: Value(status)),
       );
@@ -445,32 +445,6 @@ class TrackRepository {
           );
     });
 
-    return true;
-  }
-
-  /// Enrichissement YouTube (voir [YoutubeAutoEnricher]) — contrairement à
-  /// [enrichFromOnlineMetadata], ne comble QUE la pochette : YouTube ne
-  /// fournit ni Album/Genre/Année structurés, ni de garantie que le nom de
-  /// chaîne renvoyé soit le véritable artiste (jamais utilisé pour corriger
-  /// Titre/Artiste automatiquement, contrairement à
-  /// [correctReversedTitleArtist]). Non destructif : une pochette existante
-  /// (choisie à la main, ou HD iTunes) est conservée telle quelle.
-  ///
-  /// Renvoie `true` dès que le morceau existe : trouver une correspondance
-  /// YouTube valide EST le succès de l'enrichissement, que la miniature ait
-  /// dû combler une pochette vide ou non. Bug recette QA v1.2 : renvoyer
-  /// `false` quand une pochette existait déjà comptait une tentative ratée
-  /// à chaque passage, jusqu'à faire tomber à tort le morceau en "Échec
-  /// auto" (`needsManualReview`) alors que YouTube l'avait bien trouvé.
-  Future<bool> applyYoutubeMatch(String trackId, String thumbnailUrl) async {
-    final Track? track = await findById(trackId);
-    if (track == null) return false;
-
-    if (track.coverArtPath.isEmpty) {
-      await (_db.update(_db.tracks)..where((t) => t.id.equals(trackId))).write(
-        TracksCompanion(coverArtPath: Value(thumbnailUrl)),
-      );
-    }
     return true;
   }
 

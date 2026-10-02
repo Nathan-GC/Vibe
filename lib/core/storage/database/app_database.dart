@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
+import 'package:sqlite3/common.dart' show CommonDatabase;
 
 import '../../theme/vibe_engine/vibe_engine.dart';
 
@@ -49,15 +50,15 @@ class VibeCustomEffectConverter extends TypeConverter<VibeCustomEffect, String> 
 
 /// Statut du circuit-breaker d'enrichissement automatique ET provenance de
 /// l'enrichissement (Section 1 — voir `Tracks.enrichmentStatus`,
-/// `TrackAutoEnricher`, `YoutubeAutoEnricher`, `TrackRepository.
+/// `TrackAutoEnricher`, `MusicBrainzAutoEnricher`, `TrackRepository.
 /// shouldAttemptEnrichment`/`recordEnrichmentOutcome`/`updateMetadata`) :
 ///  - [pending] : éligible aux prochaines tentatives auto (post-import,
 ///    "Enrichir tout").
-///  - [enrichedAutoItunes] / [enrichedAutoYoutube] : enrichi automatiquement
+///  - [enrichedAutoItunes] / [enrichedAutoMusicBrainz] : enrichi automatiquement
 ///    avec confiance par la source indiquée, plus besoin de retenter.
 ///  - [enrichedManualEdit] : Titre/Artiste/Album saisis à la main dans
 ///    l'éditeur, sans passer par une suggestion réseau.
-///  - [enrichedManualItunes] / [enrichedManualYoutube] : suggestion de
+///  - [enrichedManualItunes] / [enrichedManualMusicBrainz] : suggestion de
 ///    l'onglet réseau correspondant validée telle quelle dans l'éditeur.
 ///  - [needsManualReview] : `maxEnrichmentAttempts` tentatives auto épuisées
 ///    sans correspondance fiable — ne repasse plus jamais dans la file
@@ -70,15 +71,15 @@ class VibeCustomEffectConverter extends TypeConverter<VibeCustomEffect, String> 
 ///    va de toute façon changer.
 ///
 /// Stocké en texte (nom de la valeur) : une valeur retirée doit être
-/// remappée par une migration (voir `from < 14`), sans quoi
+/// remappée par une migration (voir `from < 14` et `from < 15`), sans quoi
 /// [EnrichmentStatusConverter.fromSql] la ferait retomber sur `pending`.
 enum EnrichmentStatus {
   pending,
   enrichedAutoItunes,
-  enrichedAutoYoutube,
+  enrichedAutoMusicBrainz,
   enrichedManualEdit,
   enrichedManualItunes,
-  enrichedManualYoutube,
+  enrichedManualMusicBrainz,
   needsManualReview,
   requiresReview,
 }
@@ -256,7 +257,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 14;
+  int get schemaVersion => 16;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -344,8 +345,41 @@ class AppDatabase extends _$AppDatabase {
               "UPDATE tracks SET enrichment_status = 'enrichedManualEdit' WHERE enrichment_status = 'markedEnrichedManually'",
             );
           }
+          if (from < 15) {
+            // v1.3 : la source YouTube est remplacée 1 pour 1 par MusicBrainz
+            // (sous-catégories de provenance renommées en conséquence).
+            await customStatement(
+              "UPDATE tracks SET enrichment_status = 'enrichedAutoMusicBrainz' WHERE enrichment_status = 'enrichedAutoYoutube'",
+            );
+            await customStatement(
+              "UPDATE tracks SET enrichment_status = 'enrichedManualMusicBrainz' WHERE enrichment_status = 'enrichedManualYoutube'",
+            );
+          }
+          if (from < 16) {
+            // Confidentialité (QA v1.3) : les miniatures YouTube héritées
+            // (i.ytimg.com) faisaient encore appeler les serveurs de Google à
+            // chaque affichage de pochette. Étape distincte de v15, déjà livrée
+            // en 1.3.0+7 : un appareil déjà en v15 ne la rejouerait pas.
+            // Pochette vidée ('' = absente : colonne NOT NULL, convention de
+            // tous les lecteurs) et morceau remis à enrichir (iTunes puis
+            // MusicBrainz), ou laissé "À renommer" s'il l'était. URL distantes
+            // seulement : une pochette locale dont le chemin contient
+            // "youtube" (nom de fichier du morceau) n'est jamais touchée.
+            await customStatement(
+              "UPDATE tracks SET cover_art_path = '', enrichment_attempts = 0, "
+              "enrichment_status = CASE WHEN requires_user_review = 1 THEN 'requiresReview' ELSE 'pending' END "
+              "WHERE cover_art_path LIKE 'http%' AND (cover_art_path LIKE '%ytimg.com%' OR cover_art_path LIKE '%youtube%')",
+            );
+          }
         },
       );
 
-  static QueryExecutor _openConnection() => driftDatabase(name: 'playlist_app');
+  /// Chaque connexion attend (jusqu'à 5 s) le verrou tenu par l'autre au
+  /// lieu d'échouer aussitôt sur "database is locked" (délai SQLite par
+  /// défaut : 0) — l'app et la tâche de purge d'arrière-plan (WorkManager,
+  /// isolate séparé) ouvrent chacune la leur sur le même fichier.
+  static void configureConnection(CommonDatabase database) => database.execute('PRAGMA busy_timeout = 5000');
+
+  static QueryExecutor _openConnection() =>
+      driftDatabase(name: 'playlist_app', native: DriftNativeOptions(setup: configureConnection));
 }

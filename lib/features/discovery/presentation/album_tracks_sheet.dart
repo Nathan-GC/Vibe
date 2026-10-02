@@ -51,7 +51,13 @@ class AlbumTracksSheet extends ConsumerWidget {
                 if (album.artworkUrl != null) ...[
                   ClipRRect(
                     borderRadius: BorderRadius.circular(6),
-                    child: Image.network(album.artworkUrl!, width: 48, height: 48, fit: BoxFit.cover),
+                    child: Image.network(
+                      album.artworkUrl!,
+                      width: 48,
+                      height: 48,
+                      fit: BoxFit.cover,
+                      semanticLabel: "Pochette de l'album ${album.album}",
+                    ),
                   ),
                   const SizedBox(width: 12),
                 ],

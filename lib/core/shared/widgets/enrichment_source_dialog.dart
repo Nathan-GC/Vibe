@@ -22,11 +22,11 @@ Future<EnrichmentSource?> showEnrichmentSourceDialog(BuildContext context) {
           ),
         ),
         SimpleDialogOption(
-          onPressed: () => Navigator.pop(context, EnrichmentSource.youtube),
+          onPressed: () => Navigator.pop(context, EnrichmentSource.musicBrainz),
           child: const ListTile(
-            leading: Icon(Icons.smart_display_outlined),
-            title: Text('API YouTube'),
-            subtitle: Text('Remixes, bootlegs, sets DJ, vidéos converties'),
+            leading: Icon(Icons.library_music_outlined),
+            title: Text('MusicBrainz'),
+            subtitle: Text('Base musicale ouverte, pochettes Cover Art Archive'),
           ),
         ),
       ],

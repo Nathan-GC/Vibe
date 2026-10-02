@@ -99,7 +99,10 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
           decoration: InputDecoration(
             hintText: 'Titre, artiste, playlist...',
             border: InputBorder.none,
-            suffixIcon: IconButton(icon: const Icon(Icons.search), onPressed: () => _submit()),
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.search, semanticLabel: 'Rechercher'),
+              onPressed: () => _submit(),
+            ),
           ),
         ),
         actions: [
@@ -219,6 +222,7 @@ class _AutocompleteTile extends StatelessWidget {
               borderRadius: BorderRadius.circular(6),
               child: Image.network(
                 suggestion.artworkUrl!,
+                semanticLabel: 'Pochette de ${suggestion.label}',
                 width: 40,
                 height: 40,
                 fit: BoxFit.cover,
