@@ -4,8 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/networking/metadata_api_client/online_track_result.dart';
 import '../../../core/shared/widgets/online_track_card.dart';
 import '../../../core/storage/database/app_database.dart';
-import '../../../core/theme/vibe_engine/active_vibe_provider.dart';
-import '../../../core/theme/vibe_engine/vibe_engine.dart';
 import '../data/artist_providers.dart';
 import '../domain/album_group.dart';
 import 'online_track_actions.dart';
@@ -37,7 +35,7 @@ class AlbumTracksSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final int? collectionId = album.collectionId;
-    final VibeVisual vibe = ref.watch(activeVibeProvider);
+    final Color accent = Theme.of(context).colorScheme.primary;
 
     return SafeArea(
       child: Column(
@@ -67,7 +65,7 @@ class AlbumTracksSheet extends ConsumerWidget {
                     children: [
                       Text(
                         album.album,
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(color: vibe.accentColor),
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(color: accent),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -95,7 +93,7 @@ class AlbumTracksSheet extends ConsumerWidget {
                               ),
                         loading: () => Padding(
                           padding: const EdgeInsets.all(24),
-                          child: Center(child: CircularProgressIndicator(color: vibe.accentColor)),
+                          child: Center(child: CircularProgressIndicator(color: accent)),
                         ),
                         error: (error, _) => Padding(padding: const EdgeInsets.all(24), child: Text('Erreur : $error')),
                       );
