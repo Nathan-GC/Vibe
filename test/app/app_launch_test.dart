@@ -6,6 +6,8 @@ import 'package:playlist_app/core/purge/local_notification_service.dart';
 import 'package:playlist_app/core/purge/purge_providers.dart';
 import 'package:playlist_app/core/storage/cover_art/remote_cover_auto_trigger.dart';
 import 'package:playlist_app/core/storage/metadata_extractor/embedded_cover_backfill.dart';
+import 'package:playlist_app/features/library/data/library_rescan_providers.dart';
+import 'package:playlist_app/features/library/data/library_rescan_service.dart';
 import 'package:playlist_app/features/settings/presentation/legal_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -39,6 +41,16 @@ class _FakeCoverBackfill implements EmbeddedCoverBackfill {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+class _FakeRescan implements LibraryRescanService {
+  int runs = 0;
+
+  @override
+  Future<void> runIfPending() async => runs++;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 void main() {
   testWidgets('later launches never ask again for system permissions (a refusal at onboarding stands)', (
     tester,
@@ -58,6 +70,7 @@ void main() {
     final _FakeNotifications notifications = _FakeNotifications();
     final _FakeCoverTrigger coverTrigger = _FakeCoverTrigger();
     final _FakeCoverBackfill coverBackfill = _FakeCoverBackfill();
+    final _FakeRescan rescan = _FakeRescan();
 
     await tester.pumpWidget(ProviderScope(
       overrides: [
@@ -65,6 +78,7 @@ void main() {
         purgeCheckOnLaunchProvider.overrideWith((ref) async {}),
         remoteCoverAutoTriggerProvider.overrideWithValue(coverTrigger),
         embeddedCoverBackfillProvider.overrideWithValue(coverBackfill),
+        libraryRescanServiceProvider.overrideWithValue(rescan),
       ],
       child: const PlaylistApp(),
     ));
@@ -76,6 +90,8 @@ void main() {
     // relit lui-même onboarding terminé + interrupteur, voir son test).
     expect(coverTrigger.passes, 1);
     expect(coverBackfill.runs, 1);
+    // Nouveau scan des métadonnées (la garde RGPD et le drapeau sont dans le service, testés à part).
+    expect(rescan.runs, 1);
     expect(permissionCalls, isNot(contains('requestPermissions')));
   });
 }
