@@ -1,2 +1,6 @@
 # Anciens dossiers build/ mis de côté (OneDrive) : sorties générées, pas de source.
 build_stale_onedrive_*/
+
+# Icônes de lanceur Android (android/ versionné depuis 1.4.0+4016) : images générées,
+# sans intérêt pour le graphe et coûteuses en extraction (vision).
+android/app/src/main/res/
