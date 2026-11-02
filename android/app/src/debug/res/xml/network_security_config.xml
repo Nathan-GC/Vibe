@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug uniquement (android/app/src/debug/) : fait confiance aux certificats CA
+  installés manuellement par l'utilisateur en plus des CA système, pour que les
+  appels réseau de l'app (recherche iTunes, import Spotify) passent derrière un
+  proxy TLS local de développement (ex. antivirus interceptant HTTPS) sans
+  jamais affaiblir la sécurité du build de production, qui n'inclut pas ce
+  fichier.
+-->
+<network-security-config>
+    <base-config>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

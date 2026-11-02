@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Premier plan de l'icône adaptative Vibe : 5 barres verticales néon
+     (#6A0DAD) dans la zone de sécurité de 66dp (x/y 21..87) du canevas
+     108dp — point le plus éloigné du centre à ~31dp, donc jamais rogné par
+     le masque circulaire (rayon 33dp) du Pixel Launcher. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FF6A0DAD"
+        android:pathData="M24.1,49.69A3.45,3.45 0,0 1,31 49.69L31,58.31A3.45,3.45 0,0 1,24.1 58.31Z" />
+    <path
+        android:fillColor="#FF6A0DAD"
+        android:pathData="M37.05,39.05A3.45,3.45 0,0 1,43.95 39.05L43.95,68.95A3.45,3.45 0,0 1,37.05 68.95Z" />
+    <path
+        android:fillColor="#FF6A0DAD"
+        android:pathData="M50.55,28.7A3.45,3.45 0,0 1,57.45 28.7L57.45,79.3A3.45,3.45 0,0 1,50.55 79.3Z" />
+    <path
+        android:fillColor="#FF6A0DAD"
+        android:pathData="M64.05,39.05A3.45,3.45 0,0 1,70.95 39.05L70.95,68.95A3.45,3.45 0,0 1,64.05 68.95Z" />
+    <path
+        android:fillColor="#FF6A0DAD"
+        android:pathData="M77,49.69A3.45,3.45 0,0 1,83.9 49.69L83.9,58.31A3.45,3.45 0,0 1,77 58.31Z" />
+</vector>

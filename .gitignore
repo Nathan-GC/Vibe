@@ -14,11 +14,10 @@ build/
 .vscode/
 *.iml
 
-# Platform (générés par `flutter create .`)
-android/
-# Exception : code natif des plugins locaux (packages/*/android), qui doit
-# être versionné — seul le dossier android/ de l'app reste exclu.
-!packages/*/android/
+# Platform (générés par `flutter create .`). android/ de l'app est versionné
+# depuis 1.4.0+4016 : il porte l'App ID, la signature release (key.properties,
+# lui jamais versionné) et le manifeste Play Store ; ses fichiers machine et
+# caches sont exclus par android/.gitignore.
 ios/
 web/
 macos/
