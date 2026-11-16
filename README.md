@@ -34,8 +34,10 @@ Référence fonctionnelle et architecture détaillée :
 
 - Nom de base SQLite `playlist_app` (`AppDatabase._openConnection`) : le changer perdrait
   la bibliothèque existante des utilisateurs.
-- Package Android `com.example.playlist_app` et canal de notification
-  `com.example.playlist_app.channel.audio` : les changer casserait la mise à jour en place.
+- Identifiant d'application `com.vibeplayer.app` (Android `applicationId`/`namespace`,
+  iOS `PRODUCT_BUNDLE_IDENTIFIER`, depuis 1.4.0+4016 ; avant : `com.example.playlist_app`)
+  et canal de notification `com.vibeplayer.app.channel.audio` : les changer casserait la
+  mise à jour en place.
 - Valeurs de `VibePreset` stockées en base (`oled` = « Space », `newOled` = « OLED ») :
   rétrocompatibilité des playlists existantes.
 
