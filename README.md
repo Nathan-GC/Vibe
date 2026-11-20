@@ -26,9 +26,14 @@ Référence fonctionnelle et architecture détaillée :
 - Icône adaptative `mipmap-anydpi-v26/ic_launcher.xml` + `ic_launcher_round.xml` :
   fond vectoriel noir pur `#000000` plein cadre 108×108 dp, 5 barres néon `#6A0DAD`
   dans la zone de sécurité de 66 dp, calque `<monochrome>` pour les icônes à thème.
-- ⚠️ Le dossier `android/` est **gitignoré** : Manifest, icônes et code natif n'apparaissent
-  jamais dans `git status`. Les sauvegarder à part avant toute réinstallation du poste.
-  Le code natif versionné vit donc dans des **plugins locaux** (`packages/`), voir ci-dessous.
+- Le dossier `android/` est **versionné** depuis 1.4.0+4016 (`34a5fb4`) : Manifest, icônes,
+  `applicationId`, signature release et réécriture du manifeste Play Store
+  (`android/app/build.gradle.kts`). `android/.gitignore` en exclut les fichiers propres au
+  poste et les caches (`local.properties`, `.gradle`, `.kotlin`, `build`,
+  `GeneratedPluginRegistrant.java`, `gradle-wrapper.jar`) ainsi que `key.properties` et tout
+  keystore (`*.jks`, `*.keystore`) : à sauvegarder à part, jamais à commiter.
+- Le pont natif du mode Focus reste dans un **plugin local** (`packages/`), voir ci-dessous :
+  il date de l'époque où `android/` n'était pas versionné.
 
 ### Identifiants à ne jamais renommer
 
@@ -43,7 +48,7 @@ Référence fonctionnelle et architecture détaillée :
 
 ### Plugin local `packages/vibe_power`
 
-Pont natif Java (versionné, contrairement à `android/`) du mode Focus :
+Pont natif Java du mode Focus :
 `FLAG_KEEP_SCREEN_ON` et état/bascules du mode économie d'énergie
 (`ACTION_POWER_SAVE_MODE_CHANGED`). Préféré à `wakelock_plus`/`battery_plus`, qui
 exigeaient le téléchargement de l'AGP 8.12.1 : sur ce poste, Gradle échoue sur toute
