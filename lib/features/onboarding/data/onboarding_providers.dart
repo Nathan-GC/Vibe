@@ -41,11 +41,11 @@ class OnboardingPermissions {
     await _notifications.initialize(onNotificationTap: onTap);
   }
 
-  /// Étape 3 : accès aux fichiers audio (READ_MEDIA_AUDIO) ; `true` si accordé.
-  Future<bool> requestAudio() async {
-    await requestPermissionWithRetry(Permission.audio);
-    return (await Permission.audio.status).isGranted;
-  }
+  /// Étape 3 : accès aux fichiers audio ; `true` si accordé. Android 12 et
+  /// moins : READ_EXTERNAL_STORAGE, voir [requestAudioFilesAccess] —
+  /// `Permission.audio` seul y était toujours refusé, et le scan du 1er
+  /// lancement ne trouvait rien.
+  Future<bool> requestAudio() => requestAudioFilesAccess();
 }
 
 final Provider<OnboardingPermissions> onboardingPermissionsProvider = Provider<OnboardingPermissions>((ref) {
